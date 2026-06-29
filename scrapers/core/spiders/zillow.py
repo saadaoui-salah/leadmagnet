@@ -1,4 +1,5 @@
 import json
+import re
 from urllib.parse import urljoin
 
 import scrapy
@@ -50,6 +51,7 @@ class ZillowSpider(scrapy.Spider):
         "RETRY_TIMES": 15,
         "DOWNLOADER_MIDDLEWARES": {
             "core.middlewares.CurlCffiDownloaderMiddleware": 400,
+            "scrapy.downloadermiddlewares.httpcompression.HttpCompressionMiddleware":None,
             "scrapy.downloadermiddlewares.useragent.UserAgentMiddleware": None,
         },
         "DEFAULT_REQUEST_HEADERS": {
@@ -73,59 +75,70 @@ class ZillowSpider(scrapy.Spider):
         },
     }
 
-    def __init__(self, mapbound=None, listing_type="rent", **kwargs):
+    LISTING_TYPES = {
+        "rentals": "rentals/",
+        "sold": "sold/",
+        "sale": "",
+        "": "",
+    }
+
+    def __init__(self, zip_code=None, listing_type="sale", **kwargs):
         super().__init__(**kwargs)
-        print(self.name)
-        if self.name == "zillow":
-            if listing_type not in FILTERS:
-                raise ValueError(f"Unknown listing type: {listing_type}. Choose from: rent, sold, sale")
-            self.listing_type = listing_type
-            self.FILTER_STATE = FILTERS[listing_type]
-
-        if not mapbound:
-            raise ValueError('mapbound argument required. Format: \'{"south":47.59,"west":-122.35,"north":47.63,"east":-122.31}\'')
-
-        try:
-            self.map_bounds = json.loads(mapbound)
-        except json.JSONDecodeError:
-            raise ValueError("mapbound must be valid JSON")
-
-        required = ["south", "west", "north", "east"]
-        for key in required:
-            if key not in self.map_bounds:
-                raise ValueError(f"mapbound missing required key: {key}")
-
-        self.logger.info("Scraping [%s] bounds=%s", listing_type, self.map_bounds)
+        if not zip_code:
+            raise ValueError("zip_code argument is required")
+        if listing_type not in self.LISTING_TYPES:
+            raise ValueError(f"Unknown listing_type: {listing_type}. Choose from: rentals, sold, sale")
+        self.zip_code = zip_code
+        self.listing_type = listing_type
 
     async def start(self):
-        yield self._build_request(1, self.map_bounds)
+        path = self.LISTING_TYPES[self.listing_type]
+        url = f"https://www.zillow.com/{self.zip_code}/{path}"
+        self.logger.info("Fetching %s", url)
+        yield scrapy.Request(url, callback=self.parse, dont_filter=True)
 
-    def _build_request(self, page, map_bounds):
+    def parse(self, response):
+        match = re.search(
+            r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>',
+            response.text,
+        )
+        if not match:
+            self.logger.error("__NEXT_DATA__ not found for %s", self.zip_code)
+            return
+
+        data = json.loads(match.group(1))
+        payload = data['props']['pageProps']['searchPageState']['queryState']
+        yield self._build_request(1, payload)
+
+    def _build_request(self, page, payload):
         return scrapy.Request(
             self.API_URL,
             method="PUT",
-            body=json.dumps(self._payload(page, map_bounds)),
-            callback=self.parse,
-            cb_kwargs={"page": page, "map_bounds": map_bounds},
+            body=json.dumps(self._payload(page, payload)),
+            callback=self.parse_items,
+            cb_kwargs={"page": page, "payload": payload},
             dont_filter=True,
         )
 
-    def _payload(self, page, map_bounds):
+    def _payload(self, page, payload):
         return {
             "searchQueryState": {
                 "pagination": {"currentPage": page},
-                "isMapVisible": False,
-                "mapBounds": map_bounds,
+                "isMapVisible": True,
+                "mapBounds": payload["mapBounds"],
                 "mapZoom": self.MAP_ZOOM,
-                "filterState": self.FILTER_STATE,
+                "regionSelection": payload["regionSelection"],
+                "filterState": payload['filterState'],
                 "isListVisible": True,
             },
             "wants": {"cat1": ["listResults"]},
             "requestId": self.REQUEST_ID_START + page - 1,
+            "isDebugRequest": False,
         }
 
-    def parse(self, response, page, map_bounds):
+    def parse_items(self, response, page, payload):
         data = json.loads(response.text)
+
         if isinstance(data, list):
             data = data[0]
 
@@ -152,15 +165,14 @@ class ZillowSpider(scrapy.Spider):
         )
 
         if page < total_pages:
-            yield self._build_request(page + 1, map_bounds)
+            yield self._build_request(page + 1, payload)
 
     def _parse_listing(self, data):
         item = ZillowListing()
 
-        zpid = str(data.get("zpid", ""))
-
+        lotId = str(data.get("lotId", ""))
         item["source"] = "zillow"
-        item["zpid"] = zpid
+        item["lotId"] = lotId
         item["detail_url"] = urljoin("https://www.zillow.com", data.get("detailUrl", ""))
         item["building_name"] = data.get("buildingName", "")
         item["is_building"] = data.get("isBuilding", False)
@@ -169,56 +181,8 @@ class ZillowSpider(scrapy.Spider):
         item["city"] = data.get("addressCity", "")
         item["state"] = data.get("addressState", "")
         item["zipcode"] = data.get("addressZipcode", "")
-
         lat_long = data.get("latLong", {})
         item["latitude"] = lat_long.get("latitude")
         item["longitude"] = lat_long.get("longitude")
-
-        units = data.get("units", [])
-        min_rent = data.get("minBaseRent")
-        max_rent = data.get("maxBaseRent")
-
-        if not min_rent and units:
-            rents = []
-            for u in units:
-                price_str = u.get("price", "")
-                price_str = price_str.replace("$", "").replace(",", "").replace("+", "")
-                try:
-                    rents.append(int(price_str))
-                except ValueError:
-                    pass
-            if rents:
-                min_rent = min(rents)
-                max_rent = max(rents)
-
-        carousel = data.get("carouselPhotosComposable", {})
-        photos = [carousel['baseUrl'].format(photoKey=photo.get("photoKey")) for photo in carousel.get("photoData", [])]
-
-        hdp = data.get("hdpData", {})
-        home_info = hdp.get("homeInfo", {})
-
-        days_on_zillow = None
-        rent_zestimate = None
-        if home_info:
-            days_on_zillow = home_info.get("daysOnZillow")
-            rent_zestimate = home_info.get("rentZestimate")
-
-        item["snapshot"] = {
-            "status_type": data.get("statusType", ""),
-            "status_text": data.get("statusText", ""),
-            "min_rent": min_rent,
-            "max_rent": max_rent,
-            "availability_count": data.get("availabilityCount"),
-            "availability_date": data.get("availabilityDate", ""),
-            "photo_urls": photos,
-            "has_3d_model": data.get("has3DModel", False),
-            "is_featured_listing": data.get("isFeaturedListing", False),
-            "days_on_zillow": days_on_zillow,
-            "rent_zestimate": rent_zestimate,
-            "units": [
-                {"beds": u.get("beds"), "price": u.get("price", ""), "room_for_rent": u.get("roomForRent", False)}
-                for u in units
-            ],
-        }
 
         return item

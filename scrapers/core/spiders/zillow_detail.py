@@ -135,7 +135,7 @@ class ZillowDetailSpider(scrapy.Spider):
         item["zestimate"] = prop.get("zestimate")
         item["property_tax_rate"] = prop.get("propertyTaxRate")
         item["description"] = prop.get("description") or ""
-
+        item['parcel_id'] = prop.get("parcelId")
         item["price_history"] = [
             {
                 "date": datetime.fromtimestamp(e["time"] / 1000).strftime("%Y-%m-%d"),
@@ -174,6 +174,18 @@ class ZillowDetailSpider(scrapy.Spider):
             }
             for s in prop.get("assignedSchools", [])
         ]
+        item['units'] = [
+            {
+                "listing_type":u.get("listingType", ""),
+                "unit_id": u.get("zpid", ""),
+                "bedrooms": u.get("beds"),
+                "bathrooms": u.get("baths"),
+                "sqft": u.get("sqft"),
+                "price": u.get("price"),
+                "sold_at": u.get("lastSoldAt"),
+            }
+            for u in prop.get("ungroupedUnits", [])
+        ]
 
-        self.logger.info("Scraped zpid %s: %s", zpid, prop.get("streetAddress", ""))
+        self.logger.info("Scraped lotId %s: %s", zpid, prop.get("streetAddress", ""))
         yield item

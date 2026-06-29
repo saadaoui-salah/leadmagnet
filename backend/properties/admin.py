@@ -9,9 +9,9 @@ from django.contrib import admin
 from django.contrib import messages
 from django.urls import path
 from .models import (
-    ZipCode, Property, PropertySnapshot, PropertyUnitSnapshot,
+    ZipCode, Property, Unit, UnitSnapshot,
     ZipCodeDailyMetrics, BuildingDailyMetrics, MarketReport,
-    RentHistory, PropertyPhoto, ZipCodeRanking,
+    PropertyPhoto, ZipCodeRanking,
     StateDailyMetrics, MarketEvent,
 )
 
@@ -29,31 +29,18 @@ class LeadMagnetAdmin(admin.AdminSite):
 
     def index(self, request, extra_context=None):
         today = date.today()
-        yesterday = today - timedelta(days=1)
 
         new_today = Property.objects.filter(first_seen=today).count()
-
-        seen_yesterday = set(
-            PropertySnapshot.objects.filter(snapshot_date=yesterday)
-            .values_list("property_id", flat=True)
-        )
-        seen_today = set(
-            PropertySnapshot.objects.filter(snapshot_date=today)
-            .values_list("property_id", flat=True)
-        )
-        missing_ids = seen_yesterday - seen_today
-        missing_count = len(missing_ids)
-
         total_properties = Property.objects.count()
-        total_snapshots = PropertySnapshot.objects.count()
+        total_units = Unit.objects.count()
+        total_snapshots = UnitSnapshot.objects.count()
 
         stats = {
             "new_today": new_today,
-            "missing_count": missing_count,
             "total_properties": total_properties,
+            "total_units": total_units,
             "total_snapshots": total_snapshots,
             "today": today,
-            "yesterday": yesterday,
         }
 
         if extra_context is None:
@@ -158,7 +145,7 @@ class ZipCodeAdmin(admin.ModelAdmin):
 @admin.register(Property, site=admin_site)
 class PropertyAdmin(admin.ModelAdmin):
     list_display = [
-        "zpid", "source", "property_type",
+        "lotId", "source", "property_type",
         "street", "city", "state", "zipcode",
         "management_company", "first_seen",
     ]
@@ -170,11 +157,18 @@ class PropertyAdmin(admin.ModelAdmin):
     readonly_fields = ["first_seen", "last_seen"]
 
 
-@admin.register(PropertySnapshot, site=admin_site)
-class PropertySnapshotAdmin(admin.ModelAdmin):
-    list_display = ["property", "snapshot_date", "status_type", "min_rent", "max_rent"]
-    list_filter = ["snapshot_date", "status_type"]
-    raw_id_fields = ["property"]
+@admin.register(Unit, site=admin_site)
+class UnitAdmin(admin.ModelAdmin):
+    list_display = ["base", "bedrooms", "bathrooms", "living_area", "year_built"]
+    list_filter = ["bedrooms", "bathrooms"]
+    raw_id_fields = ["base"]
+
+
+@admin.register(UnitSnapshot, site=admin_site)
+class UnitSnapshotAdmin(admin.ModelAdmin):
+    list_display = ["unit", "date", "price", "status_type", "days_on_zillow"]
+    list_filter = ["date", "status_type"]
+    raw_id_fields = ["unit"]
 
 
 @admin.register(ZipCodeDailyMetrics, site=admin_site)
@@ -189,13 +183,6 @@ class MarketReportAdmin(admin.ModelAdmin):
     list_display = ["report_type", "zipcode", "generated_at"]
     list_filter = ["report_type", "generated_at"]
     raw_id_fields = ["zipcode"]
-
-
-@admin.register(RentHistory, site=admin_site)
-class RentHistoryAdmin(admin.ModelAdmin):
-    list_display = ["property", "date", "rent", "beds"]
-    list_filter = ["date", "beds"]
-    raw_id_fields = ["property"]
 
 
 @admin.register(PropertyPhoto, site=admin_site)

@@ -3,32 +3,25 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import api_view, action
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
-from django.db.models import Q, Avg, Sum, F
-from datetime import date, timedelta
+from django.db.models import Q
+
 
 logger = logging.getLogger(__name__)
 
 from .models import (
-    ZipCode, Property, PropertySnapshot, PropertyUnitSnapshot,
+    ZipCode, Property, Unit, UnitSnapshot,
     ZipCodeDailyMetrics, BuildingDailyMetrics, MarketReport,
-    RentHistory, PropertyPhoto, ZipCodeRanking,
+    PropertyPhoto, ZipCodeRanking,
     StateDailyMetrics, MarketEvent,
-    PropertyPriceHistory, PropertyTaxHistory, PropertySchool,
+    PropertyTaxHistory, PropertySchool,
 )
 from .serializers import (
     ZipCodeSerializer, PropertySerializer, PropertyCreateSerializer,
-    PropertySnapshotSerializer, PropertyUnitSnapshotSerializer,
+    UnitSerializer, UnitSnapshotSerializer,
     ZipCodeDailyMetricsSerializer, BuildingDailyMetricsSerializer,
-    MarketReportSerializer, RentHistorySerializer, PropertyPhotoSerializer,
+    MarketReportSerializer, PropertyPhotoSerializer,
     ZipCodeRankingSerializer, StateDailyMetricsSerializer, MarketEventSerializer,
-    PropertyPriceHistorySerializer, PropertyTaxHistorySerializer, PropertySchoolSerializer,
-)
-from .analytics import (
-    top_rent_growth, biggest_rent_drops, inventory_explosion,
-    investor_opportunities, emerging_markets, hidden_gems,
-    yield_report, luxury_markets, top_landlords, market_pulse,
-    daily_digest, rent_history_by_zip, opportunity_score,
-    state_summary, building_performance, smart_zip_pick,
+    PropertyTaxHistorySerializer, PropertySchoolSerializer,
 )
 
 
@@ -116,83 +109,138 @@ def receive_property_detail(request):
         return Response({"error": "zpid is required"}, status=status.HTTP_400_BAD_REQUEST)
 
     try:
-        prop = Property.objects.get(zpid=str(zpid))
+        prop = Property.objects.get(parcel_id=str(zpid))
     except Property.DoesNotExist:
-        return Response({"error": f"Property with zpid {zpid} not found"}, status=status.HTTP_404_NOT_FOUND)
+        return Response({"error": f"Property with parcel_id {zpid} not found"}, status=status.HTTP_404_NOT_FOUND)
 
-    detail_fields = [
+    unit_fields = [
         "bedrooms", "bathrooms", "living_area", "lot_size", "year_built",
         "property_type_detailed", "parking_features", "cooling", "heating",
         "flooring", "appliances", "interior_features", "exterior_features",
         "lot_features", "sewer", "water_source", "architectural_style",
-        "garage_spaces", "hoa_fee", "total_fees", "zestimate",
-        "property_tax_rate", "description",
+        "garage_spaces", "hoa_fee", "total_fees", "property_tax_rate",
     ]
     list_fields = {"parking_features", "appliances"}
     char_fields = {
         "cooling", "heating", "flooring", "interior_features",
         "exterior_features", "lot_features", "sewer", "water_source",
-        "architectural_style", "property_type_detailed", "total_fees", "description",
+        "architectural_style", "property_type_detailed", "total_fees",
     }
     float_fields = {"bedrooms", "bathrooms", "lot_size", "garage_spaces", "hoa_fee", "property_tax_rate"}
-    int_fields = {"living_area", "year_built", "zestimate"}
+    int_fields = {"living_area", "year_built"}
 
-    updated_fields = []
-    for field in detail_fields:
-        if field not in request.data:
-            continue
-        val = request.data[field]
-        current = getattr(prop, field, None)
-        if current not in (None, "", [], {}):
-            continue
-        if field in list_fields:
-            if isinstance(val, list):
-                setattr(prop, field, val)
-            elif isinstance(val, str):
-                setattr(prop, field, [val] if val else [])
-            else:
-                setattr(prop, field, [])
-        elif field in char_fields:
-            if isinstance(val, list):
-                setattr(prop, field, ", ".join(str(v) for v in val))
-            else:
-                setattr(prop, field, str(val))
-        elif field in float_fields:
-            try:
-                setattr(prop, field, float(val))
-            except (TypeError, ValueError):
+    units_data = request.data.get("units", [])
+
+    if units_data:
+        for u in units_data:
+            unit_id = str(u.get("unit_id", ""))
+            if not unit_id:
                 continue
-        elif field in int_fields:
-            try:
-                setattr(prop, field, int(val))
-            except (TypeError, ValueError):
+            unit, _ = Unit.objects.get_or_create(base=prop, unit_id=unit_id)
+            updated = []
+            for field in unit_fields:
+                if field not in u:
+                    continue
+                val = u[field]
+                current = getattr(unit, field, None)
+                if current not in (None, "", [], {}):
+                    continue
+                if field in list_fields:
+                    if isinstance(val, list):
+                        setattr(unit, field, val)
+                    elif isinstance(val, str):
+                        setattr(unit, field, [val] if val else [])
+                    else:
+                        setattr(unit, field, [])
+                elif field in char_fields:
+                    if isinstance(val, list):
+                        setattr(unit, field, ", ".join(str(v) for v in val))
+                    else:
+                        setattr(unit, field, str(val))
+                elif field in float_fields:
+                    try:
+                        setattr(unit, field, float(val))
+                    except (TypeError, ValueError):
+                        continue
+                elif field in int_fields:
+                    try:
+                        setattr(unit, field, int(val))
+                    except (TypeError, ValueError):
+                        continue
+                else:
+                    setattr(unit, field, val)
+                updated.append(field)
+            if "sold_at" in u and u["sold_at"]:
+                unit.sold_at = str(u["sold_at"])
+                updated.append("sold_at")
+            if updated:
+                unit.save(update_fields=updated)
+
+            snapshot_fields = {
+                "price": u.get("price"),
+            }
+            snapshot_fields = {k: v for k, v in snapshot_fields.items() if v is not None}
+            if snapshot_fields:
+                UnitSnapshot.objects.create(unit=unit, **snapshot_fields)
+    else:
+        unit, _ = Unit.objects.get_or_create(base=prop, unit_id=str(zpid))
+        updated_fields = []
+        for field in unit_fields:
+            if field not in request.data:
                 continue
-        else:
-            setattr(prop, field, val)
-        updated_fields.append(field)
-    if updated_fields:
-        try:
-            prop.save(update_fields=updated_fields)
-        except Exception as e:
-            logger.warning("Failed to save property %s: %s", zpid, e)
+            val = request.data[field]
+            current = getattr(unit, field, None)
+            if current not in (None, "", [], {}):
+                continue
+            if field in list_fields:
+                if isinstance(val, list):
+                    setattr(unit, field, val)
+                elif isinstance(val, str):
+                    setattr(unit, field, [val] if val else [])
+                else:
+                    setattr(unit, field, [])
+            elif field in char_fields:
+                if isinstance(val, list):
+                    setattr(unit, field, ", ".join(str(v) for v in val))
+                else:
+                    setattr(unit, field, str(val))
+            elif field in float_fields:
+                try:
+                    setattr(unit, field, float(val))
+                except (TypeError, ValueError):
+                    continue
+            elif field in int_fields:
+                try:
+                    setattr(unit, field, int(val))
+                except (TypeError, ValueError):
+                    continue
+            else:
+                setattr(unit, field, val)
+            updated_fields.append(field)
+        if updated_fields:
+            unit.save(update_fields=updated_fields)
 
-    created = {"price_history": 0, "tax_history": 0, "schools": 0}
+        snapshot_data = {}
+        for key in ["zestimate", "price", "days_on_zillow", "rent_zestimate",
+                     "favorite_count", "availability_count", "availability_date",
+                     "page_view_count", "time_on_zillow", "listing_sub_type",
+                     "ad_targets", "status_type", "status_text"]:
+            if key in request.data:
+                snapshot_data[key] = request.data[key]
+        if snapshot_data:
+            UnitSnapshot.objects.create(unit=unit, **snapshot_data)
 
-    price_history = request.data.get("price_history", [])
-    if price_history and not prop.price_history.exists():
-        for entry in price_history:
-            try:
-                PropertyPriceHistory.objects.create(
-                    property=prop,
-                    date=entry["date"],
-                    price=int(entry.get("price") or 0),
-                    price_per_sqft=int(entry["price_per_sqft"]) if entry.get("price_per_sqft") else None,
-                    event=entry.get("event", ""),
-                    source=entry.get("source", ""),
-                )
-                created["price_history"] += 1
-            except Exception as e:
-                logger.warning("Failed to save price history for %s: %s", zpid, e)
+    description = request.data.get("description")
+    if description and not prop.description:
+        prop.description = str(description)
+        prop.save(update_fields=["description"])
+
+    parcel_id = request.data.get("parcel_id")
+    if parcel_id and not prop.parcel_id:
+        prop.parcel_id = str(parcel_id)
+        prop.save(update_fields=["parcel_id"])
+
+    created = {"tax_history": 0, "schools": 0}
 
     tax_history = request.data.get("tax_history", [])
     if tax_history and not prop.tax_history.exists():
@@ -230,14 +278,14 @@ def receive_property_detail(request):
             except Exception as e:
                 logger.warning("Failed to save school for %s: %s", zpid, e)
 
-    return Response({"status": "ok", "zpid": zpid, "updated_fields": updated_fields, "created": created}, status=status.HTTP_200_OK)
+    return Response({"status": "ok", "zpid": zpid, "created": created}, status=status.HTTP_200_OK)
 
 
 @api_view(["GET"])
 def property_zpids(request):
     source = request.query_params.get("source", "zillow")
-    qs = Property.objects.filter(source=source).exclude(zpid="").values_list("zpid", flat=True)
-    numeric = [z for z in qs if z.isdigit()]
+    qs = Property.objects.filter(source=source).exclude(parcel_id="").values_list("parcel_id", flat=True)
+    numeric = [z for z in qs if z and z.isdigit()]
     return Response({"count": len(numeric), "zpids": numeric})
 
 
@@ -331,9 +379,22 @@ class ZipCodeViewSet(viewsets.ModelViewSet):
         })
 
 
-class PropertySnapshotViewSet(viewsets.ModelViewSet):
-    queryset = PropertySnapshot.objects.all()
-    serializer_class = PropertySnapshotSerializer
+class UnitViewSet(viewsets.ModelViewSet):
+    queryset = Unit.objects.select_related("base").all()
+    serializer_class = UnitSerializer
+    permission_classes = [AllowAny]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        property_id = self.request.query_params.get("property_id")
+        if property_id:
+            qs = qs.filter(base_id=property_id)
+        return qs
+
+
+class UnitSnapshotViewSet(viewsets.ModelViewSet):
+    queryset = UnitSnapshot.objects.select_related("unit").all()
+    serializer_class = UnitSnapshotSerializer
     permission_classes = [AllowAny]
 
 
@@ -347,19 +408,6 @@ class MarketReportViewSet(viewsets.ModelViewSet):
     queryset = MarketReport.objects.all()
     serializer_class = MarketReportSerializer
     permission_classes = [AllowAny]
-
-
-class RentHistoryViewSet(viewsets.ModelViewSet):
-    queryset = RentHistory.objects.all()
-    serializer_class = RentHistorySerializer
-    permission_classes = [AllowAny]
-
-    def get_queryset(self):
-        qs = super().get_queryset()
-        property_id = self.request.query_params.get("property_id")
-        if property_id:
-            qs = qs.filter(property_id=property_id)
-        return qs
 
 
 class PropertyPhotoViewSet(viewsets.ModelViewSet):
@@ -408,231 +456,3 @@ class MarketEventViewSet(viewsets.ModelViewSet):
         if posted is not None:
             qs = qs.filter(posted_to_linkedin=posted.lower() == "true")
         return qs.order_by("-created_at")[:100]
-
-
-@api_view(["GET"])
-def daily_report(request):
-    zipcode = request.query_params.get("zipcode")
-    if not zipcode:
-        return Response(
-            {"error": "zipcode parameter required"},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-
-    today = date.today()
-    yesterday = today - timedelta(days=1)
-    week_ago = today - timedelta(days=7)
-    month_ago = today - timedelta(days=30)
-
-    try:
-        zip_obj = ZipCode.objects.get(zipcode=zipcode)
-    except ZipCode.DoesNotExist:
-        return Response(
-            {"error": f"Zipcode {zipcode} not found"},
-            status=status.HTTP_404_NOT_FOUND,
-        )
-
-    today_metrics = ZipCodeDailyMetrics.objects.filter(
-        zipcode=zip_obj, date=today
-    ).first()
-    yesterday_metrics = ZipCodeDailyMetrics.objects.filter(
-        zipcode=zip_obj, date=yesterday
-    ).first()
-
-    total_listings = today_metrics.active_listings if today_metrics else 0
-    avg_rent = today_metrics.avg_rent if today_metrics else 0
-    rent_change = today_metrics.rent_change_pct if today_metrics else 0
-    new_listings = today_metrics.new_listings if today_metrics else 0
-
-    listings_change = 0
-    if yesterday_metrics and yesterday_metrics.active_listings:
-        listings_change = round(
-            ((total_listings - yesterday_metrics.active_listings) / yesterday_metrics.active_listings) * 100, 1
-        )
-
-    rent_history = list(
-        ZipCodeDailyMetrics.objects.filter(
-            zipcode=zip_obj, date__gte=month_ago
-        ).order_by("date").values_list("date", "avg_rent", "active_listings", "new_listings", "removed_listings")
-    )
-
-    rent_labels = [str(h[0]) for h in rent_history[-8:]]
-    rent_values = [h[1] or 0 for h in rent_history[-8:]]
-
-    supply_data = list(ZipCodeDailyMetrics.objects.filter(
-        zipcode=zip_obj, date__gte=month_ago
-    ).order_by("date").values("date", "new_listings", "removed_listings"))
-
-    supply_labels = [str(s["date"]) for s in supply_data[-8:]]
-    new_listings_series = [s["new_listings"] or 0 for s in supply_data[-8:]]
-    sold_series = [s.get("removed_listings", 0) or 0 for s in supply_data[-8:]]
-
-    inventory_change = today_metrics.inventory_change_pct if today_metrics else 0
-
-    top_growing = list(
-        ZipCodeDailyMetrics.objects.filter(
-            date__gte=month_ago,
-            rent_change_pct__isnull=False,
-        )
-        .values("zipcode__zipcode", "zipcode__city", "zipcode__state")
-        .annotate(
-            avg_rent=Avg("avg_rent"),
-            avg_growth=Avg("rent_change_pct"),
-            avg_listings=Avg("active_listings"),
-        )
-        .order_by("-avg_growth")[:5]
-    )
-
-    top_growing_list = [
-        {
-            "zip": z["zipcode__zipcode"],
-            "city": z["zipcode__city"],
-            "rentGrowth": round(z["avg_growth"], 1),
-            "avgRent": round(z["avg_rent"]) if z["avg_rent"] else 0,
-            "activeListings": round(z["avg_listings"]) if z["avg_listings"] else 0,
-        }
-        for z in top_growing
-    ]
-
-    rental_breakdown = []
-    if today_metrics:
-        for label, attr in [
-            ("Studio", "avg_studio_rent"),
-            ("1 Bedroom", "avg_1br_rent"),
-            ("2 Bedroom", "avg_2br_rent"),
-            ("3 Bedroom", "avg_3br_rent"),
-        ]:
-            val = getattr(today_metrics, attr, None)
-            if val:
-                rental_breakdown.append({
-                    "type": label,
-                    "avgRent": round(val),
-                    "count": today_metrics.active_listings // 4,
-                })
-
-    top_properties = list(
-        BuildingDailyMetrics.objects.filter(
-            date=today, property__zipcode=zipcode
-        )
-        .values(
-            "property__building_name", "property__street",
-            "property__city",
-        )
-        .annotate(
-            avg_rent=Avg("avg_rent"),
-            availability=Sum("availability_count"),
-        )
-        .order_by("-avg_rent")[:5]
-    )
-
-    properties_list = [
-        {
-            "name": p["property__building_name"] or p["property__street"],
-            "address": p["property__street"] or "",
-            "avgRent": round(p["avg_rent"]) if p["avg_rent"] else 0,
-            "beds": 2,
-            "sqft": 900,
-            "daysListed": p["availability"] or 5,
-        }
-        for p in top_properties
-    ]
-
-    yield_pct = 0
-    if avg_rent and zip_obj.median_home_value:
-        yield_pct = round((avg_rent * 12 / zip_obj.median_home_value) * 100, 1)
-
-    demand_score = min(max((rent_change or 0) * 8, 0), 100)
-    competition_score = min(100 - (inventory_change or 0) * 3, 100) if inventory_change and inventory_change < 0 else 50
-    yield_score = min(yield_pct * 12, 100) if yield_pct else 50
-    overall_score = round(demand_score * 0.4 + competition_score * 0.3 + yield_score * 0.3)
-
-    events = list(
-        MarketEvent.objects.filter(
-            zipcode=zip_obj,
-            created_at__date__gte=week_ago,
-        )
-        .order_by("-severity")[:5]
-    )
-
-    events_list = [
-        {
-            "type": e.event_type,
-            "title": e.title or e.event_type.replace("_", " ").title(),
-            "description": e.description or "",
-            "severity": ["info", "notable", "significant"][min(e.severity - 1, 2)],
-        }
-        for e in events
-    ]
-
-    median_home_value_change = 0
-    if today_metrics and yesterday_metrics and today_metrics.avg_rent and yesterday_metrics.avg_rent and today_metrics.avg_rent > 0:
-        median_home_value_change = round(((today_metrics.avg_rent - yesterday_metrics.avg_rent) / yesterday_metrics.avg_rent) * 100, 1)
-
-    new_listings_change = 0
-    if today_metrics and yesterday_metrics and yesterday_metrics.new_listings and yesterday_metrics.new_listings > 0:
-        new_listings_change = round(
-            ((new_listings - yesterday_metrics.new_listings) / yesterday_metrics.new_listings) * 100, 1
-        )
-
-    price_labels = rent_labels
-    price_values = []
-    for h in rent_history[-8:]:
-        daily = ZipCodeDailyMetrics.objects.filter(
-            zipcode=zip_obj, date=h[0]
-        ).first()
-        price_values.append(daily.avg_rent if daily and daily.avg_rent else 0)
-
-    return Response({
-        "zipcode": zipcode,
-        "city": zip_obj.city,
-        "state": zip_obj.state,
-        "date": str(today),
-        "marketOverview": {
-            "totalListings": total_listings,
-            "totalListingsChange": listings_change,
-            "avgRent": round(avg_rent) if avg_rent else 0,
-            "avgRentChange": rent_change or 0,
-            "medianHomeValue": zip_obj.median_home_value or 0,
-            "medianHomeValueChange": median_home_value_change,
-            "newListingsWeek": new_listings,
-            "newListingsChange": new_listings_change,
-        },
-        "rentTrends": {
-            "labels": rent_labels,
-            "values": rent_values,
-        },
-        "supplyDemand": {
-            "labels": supply_labels,
-            "newListings": new_listings_series,
-            "propertiesSold": sold_series,
-            "inventoryChangePct": inventory_change or 0,
-        },
-        "priceMovement": {
-            "labels": price_labels,
-            "values": price_values,
-        },
-        "topGrowingZips": top_growing_list,
-        "rentalBreakdown": rental_breakdown if rental_breakdown else [
-            {"type": "Studio", "avgRent": round(avg_rent * 0.65) if avg_rent else 2100, "count": 45},
-            {"type": "1 Bedroom", "avgRent": round(avg_rent * 0.85) if avg_rent else 2800, "count": 82},
-            {"type": "2 Bedroom", "avgRent": round(avg_rent) if avg_rent else 3200, "count": 64},
-            {"type": "3 Bedroom", "avgRent": round(avg_rent * 1.5) if avg_rent else 4800, "count": 28},
-        ],
-        "topProperties": properties_list if properties_list else [
-            {"name": "Market Average", "address": zip_obj.city, "avgRent": round(avg_rent) if avg_rent else 3200, "beds": 2, "sqft": 900, "daysListed": 12},
-        ],
-        "investorScores": {
-            "demand": round(demand_score),
-            "competition": round(competition_score),
-            "yield": round(yield_score),
-            "overall": overall_score,
-        },
-        "marketEvents": events_list if events_list else [
-            {
-                "type": "market_update",
-                "title": "Market conditions stable",
-                "description": f"Active monitoring of {zip_obj.city} rental market continues.",
-                "severity": "info",
-            },
-        ],
-    })

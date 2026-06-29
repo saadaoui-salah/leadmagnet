@@ -48,7 +48,8 @@ class Property(models.Model):
 
     source = models.CharField(max_length=50, choices=SOURCE_CHOICES, default="zillow")
     property_type = models.CharField(max_length=50, choices=PROPERTY_TYPES, blank=True)
-    zpid = models.CharField(max_length=255, blank=True, default="", db_index=True)
+    lotId = models.CharField(max_length=255, db_index=True)
+    parcel_id = models.CharField(max_length=255, db_index=True)
     detail_url = models.URLField(max_length=500, blank=True, default="")
     building_name = models.CharField(max_length=255, blank=True, default="")
     is_building = models.BooleanField(default=False)
@@ -60,12 +61,30 @@ class Property(models.Model):
     latitude = models.FloatField(null=True, blank=True)
     longitude = models.FloatField(null=True, blank=True)
     management_company = models.CharField(max_length=255, blank=True, default="")
-    primary_photo = models.URLField(max_length=500, blank=True, default="")
+    description = models.TextField(blank=True, default="")
+    has_3d_tour = models.BooleanField(default=False)
+    has_3d_model = models.BooleanField(default=False)
     first_seen = models.DateField(auto_now_add=True)
     last_seen = models.DateField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["zipcode", "city", "state"]),
+            models.Index(fields=["property_type"]),
+            models.Index(fields=["management_company"]),
+        ]
+
+    def __str__(self):
+        return self.address
+    
+class Unit(models.Model):
+    base = models.ForeignKey(Property, on_delete=models.CASCADE, related_name="units")
+    unit_id = models.CharField(max_length=255, db_index=True)
     bedrooms = models.FloatField(null=True, blank=True)
     bathrooms = models.FloatField(null=True, blank=True)
     living_area = models.IntegerField(null=True, blank=True)
+    sold_at = models.CharField(max_length=500, null=True, blank=True)
+    sqft = models.IntegerField(null=True, blank=True)
     lot_size = models.FloatField(null=True, blank=True)
     year_built = models.IntegerField(null=True, blank=True)
     property_type_detailed = models.CharField(max_length=50, blank=True, default="")
@@ -83,55 +102,26 @@ class Property(models.Model):
     garage_spaces = models.FloatField(null=True, blank=True)
     hoa_fee = models.FloatField(null=True, blank=True)
     total_fees = models.CharField(max_length=100, blank=True, default="")
-    zestimate = models.IntegerField(null=True, blank=True)
     property_tax_rate = models.FloatField(null=True, blank=True)
-    description = models.TextField(blank=True, default="")
 
-    class Meta:
-        indexes = [
-            models.Index(fields=["zipcode", "city", "state"]),
-            models.Index(fields=["property_type"]),
-            models.Index(fields=["management_company"]),
-        ]
-
-    def __str__(self):
-        return self.address
-
-
-class PropertySnapshot(models.Model):
-    property = models.ForeignKey(Property, on_delete=models.CASCADE, related_name="snapshots")
-    snapshot_date = models.DateField(db_index=True)
-    status_type = models.CharField(max_length=100, blank=True, default="")
-    status_text = models.CharField(max_length=255, blank=True, default="")
-    min_rent = models.IntegerField(null=True, blank=True)
-    max_rent = models.IntegerField(null=True, blank=True)
-    availability_count = models.IntegerField(null=True, blank=True)
-    availability_date = models.CharField(max_length=50, blank=True, default="")
-    has_3d_model = models.BooleanField(default=False)
-    is_featured_listing = models.BooleanField(default=False)
+class UnitSnapshot(models.Model):
+    unit = models.ForeignKey(Unit, on_delete=models.CASCADE, related_name="snapshots")
+    zestimate = models.IntegerField(null=True, blank=True)
+    price = models.IntegerField(null=True, blank=True)
+    date = models.DateField(auto_now_add=True)
     days_on_zillow = models.IntegerField(null=True, blank=True)
     rent_zestimate = models.IntegerField(null=True, blank=True)
-    price = models.IntegerField(null=True, blank=True)
-    page_view_count = models.IntegerField(null=True, blank=True)
     favorite_count = models.IntegerField(null=True, blank=True)
+    availability_count = models.IntegerField(null=True, blank=True)
+    availability_date = models.CharField(max_length=50, blank=True, default="")
+    page_view_count = models.IntegerField(null=True, blank=True)
     time_on_zillow = models.CharField(max_length=50, blank=True, default="")
     listing_sub_type = models.JSONField(default=list, blank=True)
-    has_3d_tour = models.BooleanField(default=False)
     ad_targets = models.JSONField(default=dict, blank=True)
-
-    class Meta:
-        unique_together = ("property", "snapshot_date")
-        indexes = [
-            models.Index(fields=["snapshot_date"]),
-            models.Index(fields=["property", "snapshot_date"]),
-        ]
+    status_type = models.CharField(max_length=100, blank=True, default="")
+    status_text = models.CharField(max_length=255, blank=True, default="")
 
 
-class PropertyUnitSnapshot(models.Model):
-    property_snapshot = models.ForeignKey(PropertySnapshot, on_delete=models.CASCADE, related_name="units")
-    beds = models.FloatField(null=True, blank=True)
-    price = models.CharField(max_length=50, null=True, blank=True)
-    room_for_rent = models.BooleanField(default=False)
 
 
 class ZipCodeDailyMetrics(models.Model):
@@ -183,22 +173,6 @@ class MarketReport(models.Model):
 
     def __str__(self):
         return self.report_type
-
-
-class RentHistory(models.Model):
-    property = models.ForeignKey(Property, on_delete=models.CASCADE, related_name="rent_history")
-    date = models.DateField()
-    rent = models.IntegerField()
-    beds = models.FloatField(null=True, blank=True)
-
-    class Meta:
-        indexes = [
-            models.Index(fields=["property", "date"]),
-            models.Index(fields=["date"]),
-        ]
-
-    def __str__(self):
-        return f"{self.property} - {self.date} - ${self.rent}"
 
 
 class PropertyPhoto(models.Model):
@@ -283,23 +257,6 @@ class MarketEvent(models.Model):
     def __str__(self):
         return f"{self.event_type} - {self.zipcode}"
 
-
-class PropertyPriceHistory(models.Model):
-    property = models.ForeignKey(Property, on_delete=models.CASCADE, related_name="price_history")
-    date = models.DateField()
-    price = models.IntegerField()
-    price_per_sqft = models.IntegerField(null=True, blank=True)
-    event = models.CharField(max_length=50)
-    source = models.CharField(max_length=50, blank=True, default="")
-
-    class Meta:
-        indexes = [
-            models.Index(fields=["property", "date"]),
-            models.Index(fields=["event"]),
-        ]
-
-    def __str__(self):
-        return f"{self.property} - {self.event} - ${self.price} ({self.date})"
 
 
 class PropertyTaxHistory(models.Model):

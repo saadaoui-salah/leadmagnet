@@ -1,10 +1,10 @@
 from rest_framework import serializers
 from .models import (
-    ZipCode, Property, PropertySnapshot, PropertyUnitSnapshot,
+    ZipCode, Property, Unit, UnitSnapshot,
     ZipCodeDailyMetrics, BuildingDailyMetrics, MarketReport,
-    RentHistory, PropertyPhoto, ZipCodeRanking,
+    PropertyPhoto, ZipCodeRanking,
     StateDailyMetrics, MarketEvent,
-    PropertyPriceHistory, PropertyTaxHistory, PropertySchool,
+    PropertyTaxHistory, PropertySchool,
 )
 
 
@@ -23,8 +23,23 @@ class ZipCodeSerializer(serializers.ModelSerializer):
         ]
 
 
+class UnitSnapshotSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UnitSnapshot
+        fields = "__all__"
+
+
+class UnitSerializer(serializers.ModelSerializer):
+    snapshots = UnitSnapshotSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Unit
+        fields = "__all__"
+
+
 class PropertySerializer(serializers.ModelSerializer):
     photos = serializers.SerializerMethodField()
+    units = UnitSerializer(many=True, read_only=True)
 
     class Meta:
         model = Property
@@ -32,18 +47,6 @@ class PropertySerializer(serializers.ModelSerializer):
 
     def get_photos(self, obj):
         return PropertyPhotoSerializer(obj.photos.all(), many=True).data
-
-
-class PropertySnapshotSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = PropertySnapshot
-        fields = "__all__"
-
-
-class PropertyUnitSnapshotSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = PropertyUnitSnapshot
-        fields = "__all__"
 
 
 class ZipCodeDailyMetricsSerializer(serializers.ModelSerializer):
@@ -61,12 +64,6 @@ class BuildingDailyMetricsSerializer(serializers.ModelSerializer):
 class MarketReportSerializer(serializers.ModelSerializer):
     class Meta:
         model = MarketReport
-        fields = "__all__"
-
-
-class RentHistorySerializer(serializers.ModelSerializer):
-    class Meta:
-        model = RentHistory
         fields = "__all__"
 
 
@@ -98,7 +95,7 @@ class PropertyCreateSerializer(serializers.Serializer):
     source = serializers.ChoiceField(
         choices=Property.SOURCE_CHOICES, default="zillow"
     )
-    zpid = serializers.CharField(max_length=255, required=False, default="", allow_blank=True)
+    lotId = serializers.CharField(max_length=255)
     detail_url = serializers.CharField(max_length=500, required=False, default="", allow_blank=True)
     building_name = serializers.CharField(max_length=255, required=False, default="", allow_blank=True)
     is_building = serializers.BooleanField(required=False, default=False)
@@ -113,73 +110,17 @@ class PropertyCreateSerializer(serializers.Serializer):
         choices=Property.PROPERTY_TYPES, required=False, default="", allow_blank=True
     )
     management_company = serializers.CharField(max_length=255, required=False, default="", allow_blank=True)
-    primary_photo = serializers.CharField(max_length=500, required=False, default="", allow_blank=True)
-
-    snapshot = serializers.DictField(required=False, default=dict)
+    has_3d_tour = serializers.BooleanField(required=False, default=False)
+    has_3d_model = serializers.BooleanField(required=False, default=False)
+    description = serializers.CharField(required=False, default="", allow_blank=True)
 
     def create(self, validated_data):
-        snapshot_data = validated_data.pop("snapshot", {})
-
         property_instance, created = Property.objects.update_or_create(
-            zpid=validated_data.get("zpid", ""),
+            lotId=validated_data.get("lotId", ""),
             source=validated_data.get("source", "zillow"),
             defaults=validated_data,
         )
-
-        photo_urls = snapshot_data.pop("photo_urls", [])
-
-        if snapshot_data:
-            PropertySnapshot.objects.update_or_create(
-                property=property_instance,
-                snapshot_date=snapshot_data.get("snapshot_date", property_instance.last_seen),
-                defaults={
-                    "status_type": snapshot_data.get("status_type", ""),
-                    "status_text": snapshot_data.get("status_text", ""),
-                    "min_rent": snapshot_data.get("min_rent"),
-                    "max_rent": snapshot_data.get("max_rent"),
-                    "availability_count": snapshot_data.get("availability_count"),
-                    "availability_date": snapshot_data.get("availability_date", ""),
-                    "has_3d_model": snapshot_data.get("has_3d_model", False),
-                    "is_featured_listing": snapshot_data.get("is_featured_listing", False),
-                    "days_on_zillow": snapshot_data.get("days_on_zillow"),
-                    "rent_zestimate": snapshot_data.get("rent_zestimate"),
-                },
-            )
-
-            units_data = snapshot_data.get("units", [])
-            if units_data:
-                snap = PropertySnapshot.objects.get(
-                    property=property_instance,
-                    snapshot_date=snapshot_data.get("snapshot_date", property_instance.last_seen),
-                )
-                snap.units.all().delete()
-                for u in units_data:
-                    PropertyUnitSnapshot.objects.create(
-                        property_snapshot=snap,
-                        beds=u.get("beds"),
-                        price=u.get("price"),
-                        room_for_rent=u.get("room_for_rent", False),
-                    )
-
-        if photo_urls:
-            property_instance.photos.all().delete()
-            for i, url in enumerate(photo_urls):
-                PropertyPhoto.objects.create(
-                    property=property_instance,
-                    photo_url=url,
-                    order=i,
-                )
-            if not property_instance.primary_photo:
-                property_instance.primary_photo = photo_urls[0]
-                property_instance.save(update_fields=["primary_photo"])
-
         return property_instance
-
-
-class PropertyPriceHistorySerializer(serializers.ModelSerializer):
-    class Meta:
-        model = PropertyPriceHistory
-        fields = "__all__"
 
 
 class PropertyTaxHistorySerializer(serializers.ModelSerializer):

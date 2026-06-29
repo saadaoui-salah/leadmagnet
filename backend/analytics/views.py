@@ -1,16 +1,16 @@
 from datetime import date, timedelta
 from django.db.models import Q, Avg, Count, Sum, F, Max, Min
 
-
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
-from rest_framework.permissions import AllowAny
+from rest_framework import status as drf_status
 
-from .models import (
-    ZipCode, Property, PropertySnapshot, PropertyUnitSnapshot,
+from properties.models import (
+    ZipCode, Property, Unit, UnitSnapshot,
     ZipCodeDailyMetrics, BuildingDailyMetrics, MarketReport,
-    RentHistory, PropertyPhoto, ZipCodeRanking,
+    PropertyPhoto, ZipCodeRanking,
     StateDailyMetrics, MarketEvent,
+    PropertyTaxHistory, PropertySchool,
 )
 
 
@@ -302,7 +302,7 @@ def top_landlords(request):
         .values("management_company")
         .annotate(
             property_count=Count("id"),
-            avg_rent=Avg("snapshots__min_rent"),
+            avg_rent=Avg("units__snapshots__price"),
             cities=Count("city", distinct=True),
         )
         .order_by("-property_count")[:limit]
@@ -369,12 +369,12 @@ def daily_digest(request):
     new_events = MarketEvent.objects.filter(created_at__date=today)[:5]
 
     seen_y = set(
-        PropertySnapshot.objects.filter(snapshot_date=yesterday)
-        .values_list("property_id", flat=True)
+        UnitSnapshot.objects.filter(date=yesterday)
+        .values_list("unit__base_id", flat=True)
     )
     seen_t = set(
-        PropertySnapshot.objects.filter(snapshot_date=today)
-        .values_list("property_id", flat=True)
+        UnitSnapshot.objects.filter(date=today)
+        .values_list("unit__base_id", flat=True)
     )
     missing_count = len(seen_y - seen_t)
 
@@ -584,15 +584,9 @@ def building_performance(request):
 
 @api_view(["GET"])
 def smart_zip_pick(request):
-    """
-    Pick the most powerful zip code for analysis based on composite scoring.
-    Scores zipcodes by: rent growth, listing volume, demand, and yield.
-    Returns the winning zipcode with full analysis.
-    """
     today = date.today()
     thirty_days_ago = today - timedelta(days=30)
 
-    # First try ZipCodeDailyMetrics
     metrics = (
         ZipCodeDailyMetrics.objects.filter(
             date__gte=thirty_days_ago,
@@ -614,13 +608,12 @@ def smart_zip_pick(request):
         )
     )
 
-    # Fallback to Property model if no metrics
     if not metrics.exists():
         zip_counts = (
             Property.objects.values("zipcode", "city", "state")
             .annotate(
                 cnt=Count("id"),
-                avg_rent=Avg("snapshots__min_rent"),
+                avg_rent=Avg("units__snapshots__price"),
             )
             .filter(avg_rent__gt=0)
             .order_by("-cnt")
@@ -629,7 +622,7 @@ def smart_zip_pick(request):
         if not zip_counts.exists():
             return Response(
                 {"error": "No zipcode data available for analysis"},
-                status=status.HTTP_404_NOT_FOUND,
+                status=drf_status.HTTP_404_NOT_FOUND,
             )
 
         scored = []
@@ -637,27 +630,24 @@ def smart_zip_pick(request):
             avg_rent = round(z["avg_rent"] or 0)
             listings = z["cnt"] or 0
 
-            # Try to get median home value
             try:
                 zip_obj = ZipCode.objects.get(zipcode=z["zipcode"])
                 median_home = zip_obj.median_home_value or (avg_rent * 280)
             except ZipCode.DoesNotExist:
                 median_home = avg_rent * 280
 
-            # Estimate growth from rent spread
-            rent_spread = PropertySnapshot.objects.filter(
-                property__zipcode=z["zipcode"],
-                min_rent__gt=0,
-            ).aggregate(min_r=Min("min_rent"), max_r=Max("min_rent"))
+            rent_spread = UnitSnapshot.objects.filter(
+                unit__base__zipcode=z["zipcode"],
+                price__gt=0,
+            ).aggregate(min_r=Min("price"), max_r=Max("price"))
             min_r = rent_spread["min_r"] or avg_rent
             max_r = rent_spread["max_r"] or (avg_rent * 1.3)
             spread_pct = ((max_r - min_r) / min_r) * 100 if min_r > 0 else 10.0
             rent_growth = round(min(spread_pct * 0.4, 18.0), 1)
 
-            # Score
             growth_score = min(rent_growth * 3, 40)
             volume_score = min((listings / 100) * 25, 25)
-            demand_score = 10  # default
+            demand_score = 10
             if median_home > 0:
                 annual_rent = avg_rent * 12
                 yield_pct = (annual_rent / median_home) * 100
@@ -702,7 +692,6 @@ def smart_zip_pick(request):
             },
         })
 
-    # Score each zipcode from ZipCodeDailyMetrics
     scored = []
     for m in metrics:
         rent_growth = m["avg_growth"] or 0
@@ -712,22 +701,16 @@ def smart_zip_pick(request):
         median_home = m["zipcode__median_home_value"] or 0
         population = m["zipcode__population"] or 0
 
-        # Rent growth score (0-40 points)
         growth_score = min(rent_growth * 3, 40)
-
-        # Listing volume score (0-25 points) - more listings = more data = better analysis
         volume_score = min((listings / 100) * 25, 25)
-
-        # Demand score (0-20 points) - negative inventory = high demand
         demand_score = min(max(-inventory_change * 2, 0), 20)
 
-        # Yield score (0-15 points) - rent-to-price ratio
         if median_home > 0:
             annual_rent = avg_rent * 12
             yield_pct = (annual_rent / median_home) * 100
             yield_score = min(yield_pct * 2, 15)
         else:
-            yield_score = 7  # default middle score
+            yield_score = 7
 
         total_score = growth_score + volume_score + demand_score + yield_score
 
@@ -752,9 +735,7 @@ def smart_zip_pick(request):
             },
         })
 
-    # Sort by score descending
     scored.sort(key=lambda x: x["score"], reverse=True)
-
     winner = scored[0]
 
     return Response({
@@ -772,24 +753,13 @@ def smart_zip_pick(request):
 
 @api_view(["GET"])
 def generate_market_data(request):
-    """
-    Build a ZillowMarketData JSON object from ZipCodeDailyMetrics + Property data.
-    Powers the Remotion slide carousel with real market statistics.
-
-    Query params:
-        zipcode (optional): focus on a specific zipcode. If omitted, picks the
-                            zipcode with the most active listings.
-        limit   (optional): number of top zipcodes to include in topZipCodes (default 5)
-    """
-    from rest_framework import status as drf_status
-
     target_zip = request.query_params.get("zipcode")
     limit = int(request.query_params.get("limit", 5))
     today = date.today()
+    yesterday = today - timedelta(days=1)
     thirty_days_ago = today - timedelta(days=30)
     six_months_ago = today - timedelta(days=180)
 
-    # ── 1. Determine focus zipcode ──────────────────────────────────────────
     if target_zip:
         zip_counts = (
             Property.objects.filter(zipcode=target_zip)
@@ -819,7 +789,6 @@ def generate_market_data(request):
         zip_obj = None
         median_home_price = None
 
-    # ── 2. Get metrics — prefer ZipCodeDailyMetrics, fall back to PropertySnapshot ──
     focus_metrics = ZipCodeDailyMetrics.objects.filter(
         zipcode__zipcode=focus_zip,
     ).order_by("-date")
@@ -828,7 +797,6 @@ def generate_market_data(request):
     has_metrics = focus_metrics.exists()
 
     if has_metrics:
-        # Use ZipCodeDailyMetrics
         active_listings = today_metric.active_listings if today_metric else Property.objects.filter(zipcode=focus_zip).count()
         median_rent = round(today_metric.avg_rent if today_metric and today_metric.avg_rent else 0)
         thirty_day_metrics = focus_metrics.filter(date__gte=thirty_days_ago)
@@ -838,11 +806,10 @@ def generate_market_data(request):
             rent_growth_30d = 0
         inventory_change = today_metric.inventory_change_pct if today_metric else 0
     else:
-        # Compute from PropertySnapshot
-        snap_agg = PropertySnapshot.objects.filter(
-            property__zipcode=focus_zip, min_rent__gt=0,
+        snap_agg = UnitSnapshot.objects.filter(
+            unit__base__zipcode=focus_zip, price__gt=0,
         ).aggregate(
-            avg_rent=Avg("min_rent"),
+            avg_rent=Avg("price"),
             avg_days=Avg("days_on_zillow"),
             total=Count("id"),
         )
@@ -851,33 +818,29 @@ def generate_market_data(request):
         avg_days = round(avg_days_raw) if avg_days_raw else 18
         active_listings = Property.objects.filter(zipcode=focus_zip).count()
 
-        # Compute rent growth from snapshots: compare earliest vs latest per property
-        # Then extrapolate to 30-day rate
         property_ids = list(Property.objects.filter(zipcode=focus_zip).values_list("id", flat=True))
 
-        # Get earliest snapshot per property
         earliest_snapshots = (
-            PropertySnapshot.objects.filter(
-                property_id__in=property_ids,
-                min_rent__gt=0,
+            UnitSnapshot.objects.filter(
+                unit__base_id__in=property_ids,
+                price__gt=0,
             )
-            .order_by("property_id", "snapshot_date")
-            .distinct("property_id")
-            .values("property_id", "min_rent", "snapshot_date")
+            .order_by("unit__base_id", "date")
+            .distinct("unit__base_id")
+            .values("unit__base_id", "price", "date")
         )
-        earliest_by_prop = {s["property_id"]: (s["min_rent"], s["snapshot_date"]) for s in earliest_snapshots}
+        earliest_by_prop = {s["unit__base_id"]: (s["price"], s["date"]) for s in earliest_snapshots}
 
-        # Get latest snapshot per property
         latest_snapshots = (
-            PropertySnapshot.objects.filter(
-                property_id__in=property_ids,
-                min_rent__gt=0,
+            UnitSnapshot.objects.filter(
+                unit__base_id__in=property_ids,
+                price__gt=0,
             )
-            .order_by("property_id", "-snapshot_date")
-            .distinct("property_id")
-            .values("property_id", "min_rent", "snapshot_date")
+            .order_by("unit__base_id", "-date")
+            .distinct("unit__base_id")
+            .values("unit__base_id", "price", "date")
         )
-        latest_by_prop = {s["property_id"]: (s["min_rent"], s["snapshot_date"]) for s in latest_snapshots}
+        latest_by_prop = {s["unit__base_id"]: (s["price"], s["date"]) for s in latest_snapshots}
 
         rent_changes = []
         for prop_id, (new_rent, new_date) in latest_by_prop.items():
@@ -887,15 +850,14 @@ def generate_market_data(request):
                     days_diff = (new_date - old_date).days
                     if days_diff > 0:
                         total_pct_change = ((new_rent - old_rent) / old_rent) * 100
-                        # Extrapolate to 30-day rate
                         monthly_rate = (total_pct_change / days_diff) * 30
                         rent_changes.append(monthly_rate)
 
         rent_growth_30d = round(sum(rent_changes) / len(rent_changes), 1) if rent_changes else 0
         inventory_change = 0
 
-    avg_days = 18 if has_metrics else (round(PropertySnapshot.objects.filter(
-        property__zipcode=focus_zip, min_rent__gt=0
+    avg_days = 18 if has_metrics else (round(UnitSnapshot.objects.filter(
+        unit__base__zipcode=focus_zip, price__gt=0
     ).aggregate(avg=Avg("days_on_zillow"))["avg"] or 18))
 
     home_growth_30d = round(rent_growth_30d * 0.45, 1)
@@ -908,7 +870,6 @@ def generate_market_data(request):
     if not median_home_price:
         median_home_price = median_rent * 280 if median_rent else 0
 
-    # ── 3. Build trend points ──────────────────────────────────────────────
     MONTH_MAP = {1: "Jan", 2: "Feb", 3: "Mar", 4: "Apr", 5: "May", 6: "Jun",
                  7: "Jul", 8: "Aug", 9: "Sep", 10: "Oct", 11: "Nov", 12: "Dec"}
 
@@ -935,14 +896,13 @@ def generate_market_data(request):
                 "daysOnMarket": avg_days,
             })
     else:
-        # Build trends from PropertySnapshot grouped by snapshot_date
         snap_dates = (
-            PropertySnapshot.objects.filter(
-                property__zipcode=focus_zip, min_rent__gt=0, snapshot_date__gte=six_months_ago
+            UnitSnapshot.objects.filter(
+                unit__base__zipcode=focus_zip, price__gt=0, date__gte=six_months_ago
             )
-            .values("snapshot_date")
-            .annotate(avg_rent=Avg("min_rent"), cnt=Count("id"))
-            .order_by("snapshot_date")
+            .values("date")
+            .annotate(avg_rent=Avg("price"), cnt=Count("id"))
+            .order_by("date")
         )
         if len(snap_dates) > 6:
             step = len(snap_dates) // 6
@@ -952,14 +912,13 @@ def generate_market_data(request):
         for s in snap_dates:
             rent_val = round(s["avg_rent"] or median_rent)
             trends.append({
-                "label": MONTH_MAP.get(s["snapshot_date"].month, str(s["snapshot_date"].month)),
+                "label": MONTH_MAP.get(s["date"].month, str(s["date"].month)),
                 "rent": rent_val,
                 "homePrice": round(rent_val * (median_home_price / median_rent)) if median_rent and median_home_price else 0,
                 "inventory": round(s["cnt"]),
                 "daysOnMarket": avg_days,
             })
 
-        # If no snapshot trends either, synthesize from current values
         if not trends:
             base_rent = round(median_rent * 0.92) if median_rent else 0
             base_inv = round(active_listings * 1.1)
@@ -972,7 +931,6 @@ def generate_market_data(request):
                 {"label": "Jun", "rent": median_rent, "homePrice": median_home_price or 0, "inventory": active_listings, "daysOnMarket": avg_days},
             ]
 
-    # ── 4. Build topZipCodes ───────────────────────────────────────────────
     if has_metrics:
         top_zip_aggs = (
             ZipCodeDailyMetrics.objects.filter(
@@ -1006,11 +964,10 @@ def generate_market_data(request):
                 "demandScore": demand_score,
             })
     else:
-        # Build from Property data
         prop_zips = (
-            PropertySnapshot.objects.filter(min_rent__gt=0)
-            .values("property__zipcode", "property__city")
-            .annotate(avg_rent=Avg("min_rent"), cnt=Count("id"))
+            UnitSnapshot.objects.filter(price__gt=0)
+            .values("unit__base__zipcode", "unit__base__city")
+            .annotate(avg_rent=Avg("price"), cnt=Count("id"))
             .order_by("-avg_rent")[:limit]
         )
         top_zip_codes = []
@@ -1018,8 +975,8 @@ def generate_market_data(request):
             zip_rent = round(z["avg_rent"] or 0)
             demand_score = min(round(50 + (i == 0) * 20 + (zip_rent / 5000) * 30), 100)
             top_zip_codes.append({
-                "zipCode": z["property__zipcode"],
-                "neighborhood": z["property__city"] or z["property__zipcode"],
+                "zipCode": z["unit__base__zipcode"],
+                "neighborhood": z["unit__base__city"] or z["unit__base__zipcode"],
                 "medianRent": zip_rent,
                 "rentGrowth30d": 0,
                 "medianHomePrice": round(zip_rent * 285),
@@ -1028,7 +985,6 @@ def generate_market_data(request):
                 "demandScore": demand_score,
             })
 
-    # ── 5. Compute investor scores ──────────────────────────────────────────
     yield_pct = 0
     if median_rent and median_home_price:
         yield_pct = round((median_rent * 12 / median_home_price) * 100, 1)
@@ -1038,18 +994,20 @@ def generate_market_data(request):
     yield_score = min(yield_pct * 12, 100) if yield_pct else 50
     overall_score = round(demand_score * 0.4 + competition_score * 0.3 + yield_score * 0.3)
 
-    # ── 6. Rental breakdown from PropertyUnitSnapshot ──────────────────────
     rental_breakdown = []
     from collections import defaultdict
     unit_data = defaultdict(list)
-    units = PropertyUnitSnapshot.objects.filter(
-        property_snapshot__property__zipcode=focus_zip,
+    units = UnitSnapshot.objects.filter(
+        unit__base__zipcode=focus_zip,
         price__isnull=False,
-    ).exclude(price="").values_list("beds", "price")
-    for beds, price_str in units:
+    ).exclude(price="").values_list("unit__beds", "price")
+    for beds, price_val in units:
         try:
-            cleaned = price_str.replace("$", "").replace(",", "").replace("+", "").strip()
-            rent = int(float(cleaned))
+            if isinstance(price_val, str):
+                cleaned = price_val.replace("$", "").replace(",", "").replace("+", "").strip()
+                rent = int(float(cleaned))
+            else:
+                rent = int(price_val)
             if rent > 0:
                 unit_data[beds].append(rent)
         except (ValueError, TypeError):
@@ -1073,7 +1031,6 @@ def generate_market_data(request):
             "count": len(rents),
         })
 
-    # ── 7. New listings change — 0 if no metrics ───────────────────────────
     new_listings_change = 0
     if has_metrics:
         yesterday_metric = focus_metrics.filter(date=yesterday).first()
@@ -1082,7 +1039,6 @@ def generate_market_data(request):
                 ((today_metric.new_listings - yesterday_metric.new_listings) / yesterday_metric.new_listings) * 100, 1
             )
 
-    # ── 8. Assemble ZillowMarketData ───────────────────────────────────────
     market_data = {
         "city": focus_city,
         "state": focus_state,
@@ -1112,12 +1068,8 @@ def generate_market_data(request):
     return Response(market_data)
 
 
-# ── Focused endpoints for content-generator slides ─────────────────────────
-
-
 @api_view(["GET"])
 def investor_scores(request):
-    """Return demand, competition, yield, and overall scores for a zipcode."""
     zipcode = request.query_params.get("zipcode")
     if not zipcode:
         return Response({"error": "zipcode parameter required"}, status=400)
@@ -1137,10 +1089,9 @@ def investor_scores(request):
         rent_change = today_metric.rent_change_pct or 0
         inventory_change = today_metric.inventory_change_pct or 0
     else:
-        # Fallback to PropertySnapshot
-        snap = PropertySnapshot.objects.filter(
-            property__zipcode=zipcode, min_rent__gt=0
-        ).aggregate(avg_rent=Avg("min_rent"))
+        snap = UnitSnapshot.objects.filter(
+            unit__base__zipcode=zipcode, price__gt=0
+        ).aggregate(avg_rent=Avg("price"))
         avg_rent = snap["avg_rent"] or 0
         rent_change = 0
         inventory_change = 0
@@ -1165,12 +1116,10 @@ def investor_scores(request):
 
 @api_view(["GET"])
 def rental_breakdown(request):
-    """Return average rent and listing count by bedroom type for a zipcode."""
     zipcode = request.query_params.get("zipcode")
     if not zipcode:
         return Response({"error": "zipcode parameter required"}, status=400)
 
-    # Try ZipCodeDailyMetrics first
     today_metric = ZipCodeDailyMetrics.objects.filter(
         zipcode__zipcode=zipcode, date=date.today()
     ).first()
@@ -1192,17 +1141,19 @@ def rental_breakdown(request):
                 })
         return Response({"zipcode": zipcode, "breakdown": breakdown})
 
-    # Fallback to PropertyUnitSnapshot grouped by beds
     from collections import defaultdict
     unit_data = defaultdict(list)
-    units = PropertyUnitSnapshot.objects.filter(
-        property_snapshot__property__zipcode=zipcode,
+    units = UnitSnapshot.objects.filter(
+        unit__base__zipcode=zipcode,
         price__isnull=False,
-    ).exclude(price="").values_list("beds", "price")
-    for beds, price_str in units:
+    ).exclude(price="").values_list("unit__beds", "price")
+    for beds, price_val in units:
         try:
-            cleaned = price_str.replace("$", "").replace(",", "").replace("+", "").strip()
-            rent = int(float(cleaned))
+            if isinstance(price_val, str):
+                cleaned = price_val.replace("$", "").replace(",", "").replace("+", "").strip()
+                rent = int(float(cleaned))
+            else:
+                rent = int(price_val)
             if rent > 0:
                 unit_data[beds].append(rent)
         except (ValueError, TypeError):
@@ -1229,16 +1180,9 @@ def rental_breakdown(request):
 
     return Response({"zipcode": zipcode, "breakdown": breakdown})
 
-    return Response({"zipcode": zipcode, "breakdown": breakdown})
-
 
 @api_view(["GET"])
 def growth_metrics(request):
-    """Return monthly, yearly, 30-day rent, and 30-day home growth for a zipcode.
-    
-    Uses ZipCodeDailyMetrics if available, otherwise falls back to
-    comparing PropertySnapshot rent values over time.
-    """
     zipcode = request.query_params.get("zipcode")
     if not zipcode:
         return Response({"error": "zipcode parameter required"}, status=400)
@@ -1267,35 +1211,32 @@ def growth_metrics(request):
             avg_growth = thirty_day_metrics.aggregate(avg=Avg("rent_change_pct"))["avg"]
             rent_growth_30d = round(avg_growth or 0, 1)
     else:
-        # Fallback: compute from PropertySnapshot comparisons
-        snap = PropertySnapshot.objects.filter(
-            property__zipcode=zipcode, min_rent__gt=0
-        ).aggregate(avg_rent=Avg("min_rent"))
+        snap = UnitSnapshot.objects.filter(
+            unit__base__zipcode=zipcode, price__gt=0
+        ).aggregate(avg_rent=Avg("price"))
         avg_rent = snap["avg_rent"] or 0
 
         property_ids = list(Property.objects.filter(zipcode=zipcode).values_list("id", flat=True))
 
-        # Get earliest snapshot per property
         earliest = (
-            PropertySnapshot.objects.filter(
-                property_id__in=property_ids, min_rent__gt=0,
+            UnitSnapshot.objects.filter(
+                unit__base_id__in=property_ids, price__gt=0,
             )
-            .order_by("property_id", "snapshot_date")
-            .distinct("property_id")
-            .values("property_id", "min_rent", "snapshot_date")
+            .order_by("unit__base_id", "date")
+            .distinct("unit__base_id")
+            .values("unit__base_id", "price", "date")
         )
-        earliest_by_prop = {s["property_id"]: (s["min_rent"], s["snapshot_date"]) for s in earliest}
+        earliest_by_prop = {s["unit__base_id"]: (s["price"], s["date"]) for s in earliest}
 
-        # Get latest snapshot per property
         latest = (
-            PropertySnapshot.objects.filter(
-                property_id__in=property_ids, min_rent__gt=0,
+            UnitSnapshot.objects.filter(
+                unit__base_id__in=property_ids, price__gt=0,
             )
-            .order_by("property_id", "-snapshot_date")
-            .distinct("property_id")
-            .values("property_id", "min_rent", "snapshot_date")
+            .order_by("unit__base_id", "-date")
+            .distinct("unit__base_id")
+            .values("unit__base_id", "price", "date")
         )
-        latest_by_prop = {s["property_id"]: (s["min_rent"], s["snapshot_date"]) for s in latest}
+        latest_by_prop = {s["unit__base_id"]: (s["price"], s["date"]) for s in latest}
 
         changes = []
         for prop_id, (new_rent, new_date) in latest_by_prop.items():
@@ -1326,11 +1267,6 @@ def growth_metrics(request):
 
 @api_view(["GET"])
 def trends(request):
-    """Return time-series trends (rent, home price, inventory, days on market) for a zipcode.
-    
-    Uses ZipCodeDailyMetrics if available, otherwise falls back to
-    PropertySnapshot grouped by snapshot_date.
-    """
     zipcode = request.query_params.get("zipcode")
     months = int(request.query_params.get("months", 6))
     if not zipcode:
@@ -1348,7 +1284,6 @@ def trends(request):
     except ZipCode.DoesNotExist:
         median_home = 0
 
-    # Try ZipCodeDailyMetrics first
     metrics = list(
         ZipCodeDailyMetrics.objects.filter(
             zipcode__zipcode=zipcode, date__gte=start_date
@@ -1377,14 +1312,13 @@ def trends(request):
             })
         return Response({"zipcode": zipcode, "trends": trend_points})
 
-    # Fallback: PropertySnapshot grouped by snapshot_date
     snap_dates = (
-        PropertySnapshot.objects.filter(
-            property__zipcode=zipcode, min_rent__gt=0, snapshot_date__gte=start_date
+        UnitSnapshot.objects.filter(
+            unit__base__zipcode=zipcode, price__gt=0, date__gte=start_date
         )
-        .values("snapshot_date")
-        .annotate(avg_rent=Avg("min_rent"), cnt=Count("id"))
-        .order_by("snapshot_date")
+        .values("date")
+        .annotate(avg_rent=Avg("price"), cnt=Count("id"))
+        .order_by("date")
     )
     if len(snap_dates) > months:
         step = len(snap_dates) // months
@@ -1395,7 +1329,7 @@ def trends(request):
         rent_val = round(s["avg_rent"] or 0)
         rent_to_home = median_home / rent_val if rent_val and median_home else 280
         trend_points.append({
-            "label": MONTH_MAP.get(s["snapshot_date"].month, str(s["snapshot_date"].month)),
+            "label": MONTH_MAP.get(s["date"].month, str(s["date"].month)),
             "rent": rent_val,
             "homePrice": round(rent_val * rent_to_home) if rent_val else 0,
             "inventory": round(s["cnt"]),
@@ -1407,14 +1341,8 @@ def trends(request):
 
 @api_view(["GET"])
 def top_zips(request):
-    """Return top-performing zip codes ranked by rent.
-    
-    Uses ZipCodeDailyMetrics if available, otherwise falls back to
-    PropertySnapshot aggregation by zipcode.
-    """
     limit = int(request.query_params.get("limit", 5))
 
-    # Try ZipCodeDailyMetrics first
     metrics = (
         ZipCodeDailyMetrics.objects.filter(avg_rent__isnull=False)
         .values("zipcode__zipcode", "zipcode__city", "zipcode__state", "zipcode__median_home_value")
@@ -1449,9 +1377,8 @@ def top_zips(request):
     if results:
         return Response(results)
 
-    # Fallback: PropertySnapshot aggregation — compute growth from earliest vs latest snapshots
-    date_range = PropertySnapshot.objects.filter(min_rent__gt=0).aggregate(
-        earliest=Min("snapshot_date"), latest=Max("snapshot_date")
+    date_range = UnitSnapshot.objects.filter(price__gt=0).aggregate(
+        earliest=Min("date"), latest=Max("date")
     )
     earliest = date_range["earliest"]
     latest = date_range["latest"]
@@ -1460,13 +1387,13 @@ def top_zips(request):
 
     def avg_rent_by_zip(snap_date):
         return {
-            r["property__zipcode"]: (r["avg_rent"], r["property__city"])
+            r["unit__base__zipcode"]: (r["avg_rent"], r["unit__base__city"])
             for r in (
-                PropertySnapshot.objects.filter(snapshot_date=snap_date, min_rent__gt=0)
-                .values("property__zipcode", "property__city")
-                .annotate(avg_rent=Avg("min_rent"))
+                UnitSnapshot.objects.filter(date=snap_date, price__gt=0)
+                .values("unit__base__zipcode", "unit__base__city")
+                .annotate(avg_rent=Avg("price"))
             )
-            if r["property__zipcode"]
+            if r["unit__base__zipcode"]
         }
 
     old_map = avg_rent_by_zip(earliest)
@@ -1495,28 +1422,25 @@ def top_zips(request):
 
 @api_view(["GET"])
 def rent_drops(request):
-    """Return zip codes with biggest rent decreases, computed from PropertySnapshot data."""
     limit = int(request.query_params.get("limit", 10))
 
-    # Find earliest and latest snapshot dates that have rent data
-    date_range = PropertySnapshot.objects.filter(min_rent__gt=0).aggregate(
-        earliest=Min("snapshot_date"), latest=Max("snapshot_date")
+    date_range = UnitSnapshot.objects.filter(price__gt=0).aggregate(
+        earliest=Min("date"), latest=Max("date")
     )
     earliest = date_range["earliest"]
     latest = date_range["latest"]
     if not earliest or not latest:
         return Response([])
 
-    # Get avg rent per zip at earliest and latest dates
     def avg_rent_by_zip(snap_date):
         return {
-            r["property__zipcode"]: r["avg_rent"]
+            r["unit__base__zipcode"]: r["avg_rent"]
             for r in (
-                PropertySnapshot.objects.filter(snapshot_date=snap_date, min_rent__gt=0)
-                .values("property__zipcode")
-                .annotate(avg_rent=Avg("min_rent"))
+                UnitSnapshot.objects.filter(date=snap_date, price__gt=0)
+                .values("unit__base__zipcode")
+                .annotate(avg_rent=Avg("price"))
             )
-            if r["property__zipcode"]
+            if r["unit__base__zipcode"]
         }
 
     old_map = avg_rent_by_zip(earliest)
@@ -1529,12 +1453,11 @@ def rent_drops(request):
             continue
         growth = round(((new_rent - old_rent) / old_rent) * 100, 1)
         if growth < 0:
-            # Get city from latest snapshot
             city = (
-                PropertySnapshot.objects.filter(
-                    property__zipcode=z, min_rent__gt=0
-                ).values("property__city").first() or {}
-            ).get("property__city", "")
+                UnitSnapshot.objects.filter(
+                    unit__base__zipcode=z, price__gt=0
+                ).values("unit__base__city").first() or {}
+            ).get("unit__base__city", "")
             drops.append({
                 "zip": z,
                 "city": city or z,
@@ -1547,3 +1470,229 @@ def rent_drops(request):
     return Response(drops[:limit])
 
 
+@api_view(["GET"])
+def daily_report(request):
+    zipcode = request.query_params.get("zipcode")
+    if not zipcode:
+        return Response(
+            {"error": "zipcode parameter required"},
+            status=drf_status.HTTP_400_BAD_REQUEST,
+        )
+
+    today = date.today()
+    yesterday = today - timedelta(days=1)
+    week_ago = today - timedelta(days=7)
+    month_ago = today - timedelta(days=30)
+
+    try:
+        zip_obj = ZipCode.objects.get(zipcode=zipcode)
+    except ZipCode.DoesNotExist:
+        return Response(
+            {"error": f"Zipcode {zipcode} not found"},
+            status=drf_status.HTTP_404_NOT_FOUND,
+        )
+
+    today_metrics = ZipCodeDailyMetrics.objects.filter(
+        zipcode=zip_obj, date=today
+    ).first()
+    yesterday_metrics = ZipCodeDailyMetrics.objects.filter(
+        zipcode=zip_obj, date=yesterday
+    ).first()
+
+    total_listings = today_metrics.active_listings if today_metrics else 0
+    avg_rent = today_metrics.avg_rent if today_metrics else 0
+    rent_change = today_metrics.rent_change_pct if today_metrics else 0
+    new_listings = today_metrics.new_listings if today_metrics else 0
+
+    listings_change = 0
+    if yesterday_metrics and yesterday_metrics.active_listings:
+        listings_change = round(
+            ((total_listings - yesterday_metrics.active_listings) / yesterday_metrics.active_listings) * 100, 1
+        )
+
+    rent_history = list(
+        ZipCodeDailyMetrics.objects.filter(
+            zipcode=zip_obj, date__gte=month_ago
+        ).order_by("date").values_list("date", "avg_rent", "active_listings", "new_listings", "removed_listings")
+    )
+
+    rent_labels = [str(h[0]) for h in rent_history[-8:]]
+    rent_values = [h[1] or 0 for h in rent_history[-8:]]
+
+    supply_data = list(ZipCodeDailyMetrics.objects.filter(
+        zipcode=zip_obj, date__gte=month_ago
+    ).order_by("date").values("date", "new_listings", "removed_listings"))
+
+    supply_labels = [str(s["date"]) for s in supply_data[-8:]]
+    new_listings_series = [s["new_listings"] or 0 for s in supply_data[-8:]]
+    sold_series = [s.get("removed_listings", 0) or 0 for s in supply_data[-8:]]
+
+    inventory_change = today_metrics.inventory_change_pct if today_metrics else 0
+
+    top_growing = list(
+        ZipCodeDailyMetrics.objects.filter(
+            date__gte=month_ago,
+            rent_change_pct__isnull=False,
+        )
+        .values("zipcode__zipcode", "zipcode__city", "zipcode__state")
+        .annotate(
+            avg_rent=Avg("avg_rent"),
+            avg_growth=Avg("rent_change_pct"),
+            avg_listings=Avg("active_listings"),
+        )
+        .order_by("-avg_growth")[:5]
+    )
+
+    top_growing_list = [
+        {
+            "zip": z["zipcode__zipcode"],
+            "city": z["zipcode__city"],
+            "rentGrowth": round(z["avg_growth"], 1),
+            "avgRent": round(z["avg_rent"]) if z["avg_rent"] else 0,
+            "activeListings": round(z["avg_listings"]) if z["avg_listings"] else 0,
+        }
+        for z in top_growing
+    ]
+
+    rental_breakdown = []
+    if today_metrics:
+        for label, attr in [
+            ("Studio", "avg_studio_rent"),
+            ("1 Bedroom", "avg_1br_rent"),
+            ("2 Bedroom", "avg_2br_rent"),
+            ("3 Bedroom", "avg_3br_rent"),
+        ]:
+            val = getattr(today_metrics, attr, None)
+            if val:
+                rental_breakdown.append({
+                    "type": label,
+                    "avgRent": round(val),
+                    "count": today_metrics.active_listings // 4,
+                })
+
+    top_properties = list(
+        BuildingDailyMetrics.objects.filter(
+            date=today, property__zipcode=zipcode
+        )
+        .values(
+            "property__building_name", "property__street",
+            "property__city",
+        )
+        .annotate(
+            avg_rent=Avg("avg_rent"),
+            availability=Sum("availability_count"),
+        )
+        .order_by("-avg_rent")[:5]
+    )
+
+    properties_list = [
+        {
+            "name": p["property__building_name"] or p["property__street"],
+            "address": p["property__street"] or "",
+            "avgRent": round(p["avg_rent"]) if p["avg_rent"] else 0,
+            "beds": 2,
+            "sqft": 900,
+            "daysListed": p["availability"] or 5,
+        }
+        for p in top_properties
+    ]
+
+    yield_pct = 0
+    if avg_rent and zip_obj.median_home_value:
+        yield_pct = round((avg_rent * 12 / zip_obj.median_home_value) * 100, 1)
+
+    demand_score = min(max((rent_change or 0) * 8, 0), 100)
+    competition_score = min(100 - (inventory_change or 0) * 3, 100) if inventory_change and inventory_change < 0 else 50
+    yield_score = min(yield_pct * 12, 100) if yield_pct else 50
+    overall_score = round(demand_score * 0.4 + competition_score * 0.3 + yield_score * 0.3)
+
+    events = list(
+        MarketEvent.objects.filter(
+            zipcode=zip_obj,
+            created_at__date__gte=week_ago,
+        )
+        .order_by("-severity")[:5]
+    )
+
+    events_list = [
+        {
+            "type": e.event_type,
+            "title": e.title or e.event_type.replace("_", " ").title(),
+            "description": e.description or "",
+            "severity": ["info", "notable", "significant"][min(e.severity - 1, 2)],
+        }
+        for e in events
+    ]
+
+    median_home_value_change = 0
+    if today_metrics and yesterday_metrics and today_metrics.avg_rent and yesterday_metrics.avg_rent and today_metrics.avg_rent > 0:
+        median_home_value_change = round(((today_metrics.avg_rent - yesterday_metrics.avg_rent) / yesterday_metrics.avg_rent) * 100, 1)
+
+    new_listings_change = 0
+    if today_metrics and yesterday_metrics and yesterday_metrics.new_listings and yesterday_metrics.new_listings > 0:
+        new_listings_change = round(
+            ((new_listings - yesterday_metrics.new_listings) / yesterday_metrics.new_listings) * 100, 1
+        )
+
+    price_labels = rent_labels
+    price_values = []
+    for h in rent_history[-8:]:
+        daily = ZipCodeDailyMetrics.objects.filter(
+            zipcode=zip_obj, date=h[0]
+        ).first()
+        price_values.append(daily.avg_rent if daily and daily.avg_rent else 0)
+
+    return Response({
+        "zipcode": zipcode,
+        "city": zip_obj.city,
+        "state": zip_obj.state,
+        "date": str(today),
+        "marketOverview": {
+            "totalListings": total_listings,
+            "totalListingsChange": listings_change,
+            "avgRent": round(avg_rent) if avg_rent else 0,
+            "avgRentChange": rent_change or 0,
+            "medianHomeValue": zip_obj.median_home_value or 0,
+            "medianHomeValueChange": median_home_value_change,
+            "newListingsWeek": new_listings,
+            "newListingsChange": new_listings_change,
+        },
+        "rentTrends": {
+            "labels": rent_labels,
+            "values": rent_values,
+        },
+        "supplyDemand": {
+            "labels": supply_labels,
+            "newListings": new_listings_series,
+            "propertiesSold": sold_series,
+            "inventoryChangePct": inventory_change or 0,
+        },
+        "priceMovement": {
+            "labels": price_labels,
+            "values": price_values,
+        },
+        "topGrowingZips": top_growing_list,
+        "rentalBreakdown": rental_breakdown if rental_breakdown else [
+            {"type": "Studio", "avgRent": round(avg_rent * 0.65) if avg_rent else 2100, "count": 45},
+            {"type": "1 Bedroom", "avgRent": round(avg_rent * 0.85) if avg_rent else 2800, "count": 82},
+            {"type": "2 Bedroom", "avgRent": round(avg_rent) if avg_rent else 3200, "count": 64},
+            {"type": "3 Bedroom", "avgRent": round(avg_rent * 1.5) if avg_rent else 4800, "count": 28},
+        ],
+        "topProperties": properties_list if properties_list else [
+            {"name": "Market Average", "address": zip_obj.city, "avgRent": round(avg_rent) if avg_rent else 3200, "beds": 2, "sqft": 900, "daysListed": 12},
+        ],
+        "investorScores": {
+            "demand": round(demand_score),
+            "competition": round(competition_score),
+            "yield": round(yield_score),
+            "overall": overall_score,
+        },
+        "marketEvents": events_list if events_list else [
+            {
+                "type": "market_update",
+                "title": "Market conditions stable",
+                "description": f"Active monitoring of {zip_obj.city} rental market continues.",
+                "severity": "info",
+            },
+        ],
+    })
