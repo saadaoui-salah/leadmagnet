@@ -21,4 +21,6 @@ RUN pip install -r requirements.txt
 
 COPY . .
 
-CMD ["scrapy", "list"]
+RUN pip install --no-cache-dir -e .
+
+CMD ["start-crawl"]
