@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="scrapers",
+    name="myproject",
     version="1.0",
     packages=find_packages(),
     install_requires=[
@@ -9,4 +9,9 @@ setup(
         for line in open("requirements.txt")
         if line.strip() and not line.startswith("#")
     ],
+    entry_points={
+        "scrapy": [
+            "settings = myproject.settings",
+        ],
+    },
 )
