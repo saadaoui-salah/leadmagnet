@@ -28,7 +28,7 @@ jobs:
             echo "Authenticating git.."
             eval "$(ssh-agent -s)" && ssh-add ~/.ssh/git && ssh -T git@github.com
 
-            cd ~/realestate-leadmagnet
+            cd ~/leadmagnet/backend
 
             echo "Pulling latest..."
             git pull origin master
