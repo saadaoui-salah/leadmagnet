@@ -112,7 +112,7 @@ def is_job_scheduled(active_jobs, listing_type, zipcode):
 # ──────────────────────────────────────────────────────────
 # SCHEDULE SPIDER JOB
 # ──────────────────────────────────────────────────────────
-def run_spider(zipcode, bounds, listing_type):
+def run_spider(zipcode, listing_type):
     """Schedule a single Zyte spider job."""
     tag = f"zillow-{listing_type}-{zipcode}"
 
@@ -121,7 +121,7 @@ def run_spider(zipcode, bounds, listing_type):
         "spider": "zillow",
         "units": 1,
         "add_tag": tag,
-        "mapbound": json.dumps(bounds),
+        "zip_code": zipcode,
         "listing_type": listing_type,
     }
 
@@ -213,7 +213,7 @@ def main():
                 scheduled += 1
             else:
                 print(f"  [{i}/{len(zip_codes)}] ZIP {zipcode}:")
-                success = run_spider(zipcode, bounds, listing_type)
+                success = run_spider(zipcode, listing_type)
                 if success:
                     scheduled += 1
                 else:
