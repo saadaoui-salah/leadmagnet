@@ -95,8 +95,8 @@ class PropertyCreateSerializer(serializers.Serializer):
     source = serializers.ChoiceField(
         choices=Property.SOURCE_CHOICES, default="zillow"
     )
-    lotId = serializers.CharField(max_length=255)
-    zpid = serializers.CharField(max_length=255, required=False, default="", allow_blank=True)
+    lotId = serializers.CharField(max_length=255, required=False, default="", allow_blank=True)
+    zpid = serializers.CharField(max_length=255)
     detail_url = serializers.CharField(max_length=500, required=False, default="", allow_blank=True)
     building_name = serializers.CharField(max_length=255, required=False, default="", allow_blank=True)
     is_building = serializers.BooleanField(required=False, default=False)
