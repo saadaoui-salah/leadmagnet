@@ -41,4 +41,4 @@ jobs:
         env:
           SHUB_APIKEY: ${{ secrets.SHUB_API_KEY }}
         run: |
-          printf "Y\n" | shub deploy ${{ secrets.SHUB_PROJECT_ID }}
+          printf "Y\n\n" | shub deploy ${{ secrets.SHUB_PROJECT_ID }}
