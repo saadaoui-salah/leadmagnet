@@ -28,10 +28,9 @@ jobs:
       - name: Install scraper dependencies
         run: pip install -r requirements.txt
         working-directory: scrapers
-
-      - name: Login to Zyte
-        run: shub login ${{ secrets.SHUB_API_KEY }}
-
+      
       - name: Deploy to Zyte
+        env:
+          SHUB_APIKEY: ${{ secrets.SHUB_API_KEY }}
         run: shub deploy ${{ secrets.SHUB_PROJECT_ID }}
         working-directory: scrapers
