@@ -76,7 +76,7 @@ class ZillowSpider(scrapy.Spider):
     }
 
     LISTING_TYPES = {
-        "rentals": "rentals/",
+        "rent": "rentals/",
         "sold": "sold/",
         "sale": "",
         "": "",
