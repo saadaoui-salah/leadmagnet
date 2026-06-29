@@ -1,0 +1,37 @@
+name: Deploy Scrapers to Zyte
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'scrapers/**'
+      - '.github/workflows/deploy-scrapers.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install shub
+        run: pip install shub
+
+      - name: Install scraper dependencies
+        run: pip install -r requirements.txt
+        working-directory: scrapers
+
+      - name: Login to Zyte
+        run: shub login ${{ secrets.SHUB_API_KEY }}
+
+      - name: Deploy to Zyte
+        run: shub deploy ${{ secrets.SHUB_PROJECT_ID }}
+        working-directory: scrapers
