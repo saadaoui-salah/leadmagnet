@@ -24,7 +24,7 @@ ZYTE_PROJECT_ID = os.environ.get("ZYTE_PROJECT_ID", "")
 ZYTE_RUN_URL = "https://app.zyte.com/api/run.json"
 ZYTE_JOBS_URL = "https://app.zyte.com/api/jobs/list.json"
 
-BACKEND_API = "http://212.85.17.52:81"
+BACKEND_API = os.environ.get("BACKEND_API")
 ZIPCODES_URL = f"{BACKEND_API}/api/zipcodes/all/"
 
 LISTING_TYPES = ["rent", "sold", "sale"]
