@@ -40,4 +40,5 @@ jobs:
       - name: Deploy to Zyte
         env:
           SHUB_APIKEY: ${{ secrets.SHUB_API_KEY }}
-        run: shub deploy ${{ secrets.SHUB_PROJECT_ID }}
+        run: |
+          printf "Y\n" | shub deploy ${{ secrets.SHUB_PROJECT_ID }}
