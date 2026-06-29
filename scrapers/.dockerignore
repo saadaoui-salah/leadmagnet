@@ -1,9 +1,0 @@
-env/
-.git/
-.gitignore
-*.pyc
-__pycache__/
-output/
-data.json
-.dockerignore
-Dockerfile
