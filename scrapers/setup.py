@@ -11,7 +11,7 @@ setup(
     ],
     entry_points={
         "scrapy": [
-            "settings = myproject.settings",
+            "settings = core.settings",
         ],
     },
 )
