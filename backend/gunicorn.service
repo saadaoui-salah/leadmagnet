@@ -4,8 +4,8 @@ After=network.target
 
 [Service]
 User=root
-WorkingDirectory=/root/realestate-leadmagnet
-ExecStart=/root/realestate-leadmagnet/env/bin/gunicorn \
+WorkingDirectory=/root/leadmagnet/backend
+ExecStart=/root/leadmagnet/backend/env/bin/gunicorn \
     -w 6 \
     -b 0.0.0.0:81 \
     core.wsgi:application
