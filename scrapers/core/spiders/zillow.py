@@ -171,8 +171,10 @@ class ZillowSpider(scrapy.Spider):
         item = ZillowListing()
 
         lotId = str(data.get("lotId", ""))
+        zpid = str(data.get("zpid", ""))
         item["source"] = "zillow"
         item["lotId"] = lotId
+        item["zpid"] = zpid
         item["detail_url"] = urljoin("https://www.zillow.com", data.get("detailUrl", ""))
         item["building_name"] = data.get("buildingName", "")
         item["is_building"] = data.get("isBuilding", False)

@@ -109,6 +109,7 @@ class ZillowDetailSpider(scrapy.Spider):
 
         item = ZillowDetailItem()
         item["zpid"] = str(zpid)
+        item["lotId"] = str(zpid)
 
         item["bedrooms"] = prop.get("bedrooms")
         item["bathrooms"] = prop.get("bathrooms")

@@ -96,6 +96,7 @@ class PropertyCreateSerializer(serializers.Serializer):
         choices=Property.SOURCE_CHOICES, default="zillow"
     )
     lotId = serializers.CharField(max_length=255)
+    zpid = serializers.CharField(max_length=255, required=False, default="", allow_blank=True)
     detail_url = serializers.CharField(max_length=500, required=False, default="", allow_blank=True)
     building_name = serializers.CharField(max_length=255, required=False, default="", allow_blank=True)
     is_building = serializers.BooleanField(required=False, default=False)
@@ -116,7 +117,7 @@ class PropertyCreateSerializer(serializers.Serializer):
 
     def create(self, validated_data):
         property_instance, created = Property.objects.update_or_create(
-            lotId=validated_data.get("lotId", ""),
+            zpid=validated_data.get("zpid", ""),
             source=validated_data.get("source", "zillow"),
             defaults=validated_data,
         )

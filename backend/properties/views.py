@@ -109,9 +109,9 @@ def receive_property_detail(request):
         return Response({"error": "zpid is required"}, status=status.HTTP_400_BAD_REQUEST)
 
     try:
-        prop = Property.objects.get(parcel_id=str(zpid))
+        prop = Property.objects.get(zpid=str(zpid))
     except Property.DoesNotExist:
-        return Response({"error": f"Property with parcel_id {zpid} not found"}, status=status.HTTP_404_NOT_FOUND)
+        return Response({"error": f"Property with zpid {zpid} not found"}, status=status.HTTP_404_NOT_FOUND)
 
     unit_fields = [
         "bedrooms", "bathrooms", "living_area", "lot_size", "year_built",
@@ -284,7 +284,7 @@ def receive_property_detail(request):
 @api_view(["GET"])
 def property_zpids(request):
     source = request.query_params.get("source", "zillow")
-    qs = Property.objects.filter(source=source).exclude(parcel_id="").values_list("parcel_id", flat=True)
+    qs = Property.objects.filter(source=source).exclude(zpid="").values_list("zpid", flat=True)
     numeric = [z for z in qs if z and z.isdigit()]
     return Response({"count": len(numeric), "zpids": numeric})
 

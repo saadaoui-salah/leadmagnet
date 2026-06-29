@@ -49,6 +49,7 @@ class Property(models.Model):
     source = models.CharField(max_length=50, choices=SOURCE_CHOICES, default="zillow")
     property_type = models.CharField(max_length=50, choices=PROPERTY_TYPES, blank=True)
     lotId = models.CharField(max_length=255, db_index=True)
+    zpid = models.CharField(max_length=255, db_index=True)
     parcel_id = models.CharField(max_length=255, db_index=True)
     detail_url = models.URLField(max_length=500, blank=True, default="")
     building_name = models.CharField(max_length=255, blank=True, default="")

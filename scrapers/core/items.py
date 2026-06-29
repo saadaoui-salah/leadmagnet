@@ -4,6 +4,7 @@ import scrapy
 class ZillowListing(scrapy.Item):
     source = scrapy.Field()
     lotId = scrapy.Field()
+    zpid = scrapy.Field()
     detail_url = scrapy.Field()
     building_name = scrapy.Field()
     is_building = scrapy.Field()
@@ -18,6 +19,7 @@ class ZillowListing(scrapy.Item):
 
 class ZillowDetailItem(scrapy.Item):
     zpid = scrapy.Field()
+    lotId = scrapy.Field()
     parcel_id = scrapy.Field()
     bedrooms = scrapy.Field()
     bathrooms = scrapy.Field()
