@@ -1,0 +1,16 @@
+[Unit]
+Description=Gunicorn
+After=network.target
+
+[Service]
+User=root
+WorkingDirectory=/root/realestate-leadmagnet
+ExecStart=/root/realestate-leadmagnet/env/bin/gunicorn \
+    -w 6 \
+    -b 0.0.0.0:81 \
+    core.wsgi:application
+
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

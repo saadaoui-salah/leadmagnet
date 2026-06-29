@@ -1,0 +1,131 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block title %}{{ title }} | {{ site_title }}{% endblock %}
+
+{% block extrahead %}
+{{ block.super }}
+<style>
+  .stats-panel {
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 24px;
+    margin: 20px 0;
+  }
+  .stats-panel h2 {
+    margin-top: 0;
+    font-size: 18px;
+    color: #333;
+  }
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin-top: 16px;
+  }
+  .stat-card {
+    background: #f8f9fa;
+    border-radius: 6px;
+    padding: 16px;
+    text-align: center;
+  }
+  .stat-card .number {
+    font-size: 32px;
+    font-weight: 700;
+    color: #417690;
+    display: block;
+  }
+  .stat-card .label {
+    font-size: 13px;
+    color: #666;
+    margin-top: 4px;
+  }
+  .stat-card.green .number { color: #27856a; }
+  .stat-card.red .number { color: #ba2121; }
+  .stat-card.blue .number { color: #417690; }
+  .stat-date {
+    font-size: 12px;
+    color: #999;
+    margin-top: 8px;
+  }
+  .zyte-panel {
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 24px;
+    margin: 20px 0;
+  }
+  .zyte-panel h2 {
+    margin-top: 0;
+    font-size: 18px;
+    color: #333;
+  }
+  .zyte-panel p {
+    color: #666;
+    margin-bottom: 16px;
+  }
+  .zyte-buttons {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .zyte-btn {
+    display: inline-block;
+    padding: 10px 24px;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+    color: #fff;
+  }
+  .zyte-btn-rent { background: #417690; }
+  .zyte-btn-sold { background: #79aec8; }
+  .zyte-btn-sale { background: #27856a; }
+  .zyte-btn:hover { opacity: 0.9; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="content-main">
+  <div class="stats-panel">
+    <h2>Property Tracker</h2>
+    <div class="stats-grid">
+      <div class="stat-card green">
+        <span class="number">{{ stats.new_today }}</span>
+        <span class="label">New Today</span>
+      </div>
+      <div class="stat-card red">
+        <span class="number">{{ stats.missing_count }}</span>
+        <span class="label">Missing Since Yesterday</span>
+      </div>
+      <div class="stat-card blue">
+        <span class="number">{{ stats.total_properties }}</span>
+        <span class="label">Total Properties</span>
+      </div>
+      <div class="stat-card blue">
+        <span class="number">{{ stats.total_snapshots }}</span>
+        <span class="label">Total Snapshots</span>
+      </div>
+    </div>
+    <div class="stat-date">As of {{ stats.today }}</div>
+  </div>
+
+  <div class="zyte-panel">
+    <h2>Zyte Spider Control</h2>
+    <p>Submit scraping jobs to Zyte Cloud for all zip codes in the database.</p>
+    <form method="post" action="{% url 'admin:run-zyte' %}">
+      {% csrf_token %}
+      <div class="zyte-buttons">
+        <button type="submit" name="listing_type" value="rent" class="zyte-btn zyte-btn-rent">Run Rent Spider</button>
+        <button type="submit" name="listing_type" value="sold" class="zyte-btn zyte-btn-sold">Run Sold Spider</button>
+        <button type="submit" name="listing_type" value="sale" class="zyte-btn zyte-btn-sale">Run Sale Spider</button>
+      </div>
+    </form>
+  </div>
+
+  {{ block.super }}
+</div>
+{% endblock %}

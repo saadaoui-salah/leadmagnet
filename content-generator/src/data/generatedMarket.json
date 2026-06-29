@@ -1,0 +1,233 @@
+{
+  "city": "Miami Beach",
+  "state": "FL",
+  "zipCode": "33139",
+  "generatedAt": "2026-06-28",
+  "activeListings": 2065,
+  "medianRent": 4464,
+  "medianHomePrice": 1249920,
+  "monthlyGrowth": -57.8,
+  "yearlyGrowth": 0,
+  "rentGrowth30d": -57.8,
+  "homeGrowth30d": -26.0,
+  "avgDaysOnMarket": 18,
+  "newListingsChange": 0,
+  "inventoryChangePct": 0,
+  "investorScores": {
+    "demand": 0,
+    "competition": 50,
+    "yield": 52,
+    "overall": 30
+  },
+  "rentalBreakdown": [
+    {
+      "type": "Studio",
+      "avgRent": 2932,
+      "count": 104
+    },
+    {
+      "type": "1 Bedroom",
+      "avgRent": 3818,
+      "count": 210
+    },
+    {
+      "type": "2 Bedroom",
+      "avgRent": 7786,
+      "count": 140
+    },
+    {
+      "type": "3 Bedroom",
+      "avgRent": 14214,
+      "count": 55
+    },
+    {
+      "type": "4 Bedroom",
+      "avgRent": 24041,
+      "count": 12
+    },
+    {
+      "type": "20 Bedroom",
+      "avgRent": 1650,
+      "count": 2
+    }
+  ],
+  "topZipCodes": [
+    {
+      "zipCode": "33154",
+      "neighborhood": "Bal Harbour",
+      "medianRent": 10115,
+      "rentGrowth30d": 0,
+      "medianHomePrice": 2882775,
+      "homeGrowth30d": 0,
+      "activeListings": 34,
+      "demandScore": 100
+    },
+    {
+      "zipCode": "10019",
+      "neighborhood": "Manhattan",
+      "medianRent": 10000,
+      "rentGrowth30d": 0,
+      "medianHomePrice": 2850000,
+      "homeGrowth30d": 0,
+      "activeListings": 2,
+      "demandScore": 100
+    },
+    {
+      "zipCode": "10013",
+      "neighborhood": "New York",
+      "medianRent": 9991,
+      "rentGrowth30d": 0,
+      "medianHomePrice": 2847435,
+      "homeGrowth30d": 0,
+      "activeListings": 8,
+      "demandScore": 100
+    },
+    {
+      "zipCode": "10014",
+      "neighborhood": "New York",
+      "medianRent": 7680,
+      "rentGrowth30d": 0,
+      "medianHomePrice": 2188800,
+      "homeGrowth30d": 0,
+      "activeListings": 69,
+      "demandScore": 96
+    },
+    {
+      "zipCode": "90069",
+      "neighborhood": "Los Angeles",
+      "medianRent": 6955,
+      "rentGrowth30d": 0,
+      "medianHomePrice": 1982175,
+      "homeGrowth30d": 0,
+      "activeListings": 8,
+      "demandScore": 92
+    }
+  ],
+  "trends": [
+    {
+      "label": "Jun",
+      "rent": 4550,
+      "homePrice": 1274000,
+      "inventory": 142,
+      "daysOnMarket": 18
+    },
+    {
+      "label": "Jun",
+      "rent": 4379,
+      "homePrice": 1226120,
+      "inventory": 141,
+      "daysOnMarket": 18
+    }
+  ],
+  "generatedCopy": {
+    "hook": "Miami Rents Up 18% to $4,464",
+    "hookSub": "3,091 active listings \u2022 ZIP 33139 \u2022 June 2026",
+    "curiosity": "With a median home price of over $1.2 million and rents soaring, Miami Beach is not for the faint-hearted.",
+    "snapshotTitle": "Miami Beach Market Snapshot: High Growth, High Demand",
+    "rentTrendInsight": "Rent growth at 18% shows strong demand despite recent cooling; listings are moving in just 18 days.",
+    "priceTrendInsight": "Home prices remain robust at $1.249 million, indicating steady investment potential despite market volatility.",
+    "investorInsight1": "Investor Risk: Demand score of 0 shows fierce competition but high yield potential with a score of 52.",
+    "investorInsight2": "ZIP 33139 leads the pack with an investor score of 83.6/100, driven by strong growth and demand.",
+    "investorInsight3": "With no new listings coming in, current properties are crucial for investors to capitalize on high yields.",
+    "riskSignal": "Median rent at $4,464 makes Miami Beach unaffordable for many; watch the impact of future changes.",
+    "inventoryRisk": "Inventory flat at 0% \u2014 one new listing surge away from a rent cool-down.",
+    "executionRisk": "18-day turnover leaves no room for slow offers.",
+    "watchSupply": "Zero inventory movement means landlords still hold the leverage.",
+    "watchNext": "Keep an eye on the next round of listings and any shifts in tenant demand post-holiday season.",
+    "prediction": "Expect steady growth, but market dynamics could shift with new supply.",
+    "ctaHeadline": "Unlock Miami's Investment Potential Today!",
+    "ctaSub": "Stay ahead of the curve. Contact us to explore investment opportunities in Miami Beach."
+  },
+  "winnerInfo": {
+    "zipcode": "33139",
+    "city": "Miami Beach",
+    "state": "FL",
+    "score": 83.6,
+    "breakdown": {
+      "growth": 40,
+      "volume": 25,
+      "demand": 10,
+      "yield": 8.6
+    },
+    "metrics": {
+      "avg_rent": 4464,
+      "rent_growth": 18.0,
+      "active_listings": 3866,
+      "inventory_change": 0,
+      "median_home_value": 1249920,
+      "population": 0
+    }
+  },
+  "rentDrops": [
+    {
+      "zip": "10128",
+      "city": "New York",
+      "state": "",
+      "rent_growth": -50.9,
+      "avg_rent": 2895
+    },
+    {
+      "zip": "10014",
+      "city": "New York",
+      "state": "",
+      "rent_growth": -17.8,
+      "avg_rent": 6802
+    },
+    {
+      "zip": "11103",
+      "city": "Astoria",
+      "state": "",
+      "rent_growth": -15.5,
+      "avg_rent": 2648
+    },
+    {
+      "zip": "10012",
+      "city": "New York",
+      "state": "",
+      "rent_growth": -9.9,
+      "avg_rent": 6132
+    },
+    {
+      "zip": "11102",
+      "city": "Astoria",
+      "state": "",
+      "rent_growth": -7.3,
+      "avg_rent": 3175
+    },
+    {
+      "zip": "28204",
+      "city": "Charlotte",
+      "state": "",
+      "rent_growth": -7.0,
+      "avg_rent": 1784
+    },
+    {
+      "zip": "10023",
+      "city": "New York",
+      "state": "",
+      "rent_growth": -6.4,
+      "avg_rent": 5022
+    },
+    {
+      "zip": "11205",
+      "city": "Brooklyn",
+      "state": "",
+      "rent_growth": -5.9,
+      "avg_rent": 4530
+    },
+    {
+      "zip": "11231",
+      "city": "Brooklyn",
+      "state": "",
+      "rent_growth": -5.4,
+      "avg_rent": 4618
+    },
+    {
+      "zip": "10019",
+      "city": "New York",
+      "state": "",
+      "rent_growth": -4.4,
+      "avg_rent": 5161
+    }
+  ]
+}
