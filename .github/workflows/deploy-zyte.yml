@@ -10,37 +10,37 @@ on:
   workflow_dispatch:
 
 jobs:
-  prepare:
-    runs-on: ubuntu-latest
-    outputs:
-      accounts: ${{ steps.accounts.outputs.accounts }}
-    steps:
-      - id: accounts
-        run: echo "accounts=${{ secrets.ZYTE_ACCOUNTS }}" >> "$GITHUB_OUTPUT"
-
   deploy:
-    needs: prepare
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        account: ${{ fromJson(needs.prepare.outputs.accounts) }}
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - run: pip install shub
+      - name: Install dependencies
+        run: |
+          pip install shub jq
 
-      - run: pip install -r requirements.txt
+      - name: Install scraper dependencies
         working-directory: scrapers
+        run: |
+          pip install -r requirements.txt
 
-      - name: Deploy
+      - name: Deploy to all Zyte accounts
         working-directory: scrapers
         env:
-          SHUB_APIKEY: ${{ matrix.account.api_key }}
+          ZYTE_ACCOUNTS: ${{ secrets.ZYTE_ACCOUNTS }}
         run: |
-          shub deploy ${{ matrix.account.project_id }}
+          echo "$ZYTE_ACCOUNTS" | jq -c '.[]' | while read -r account; do
+            export SHUB_APIKEY=$(echo "$account" | jq -r '.api_key')
+            PROJECT_ID=$(echo "$account" | jq -r '.project_id')
+
+            echo "Deploying to project $PROJECT_ID"
+
+            shub deploy "$PROJECT_ID"
+          done
