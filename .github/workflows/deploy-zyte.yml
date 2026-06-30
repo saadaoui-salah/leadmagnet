@@ -31,7 +31,7 @@ jobs:
 
       - name: Deploy to Zyte
         env:
-          SHUB_APIKEY: ${{ secrets.ZYTE_API_KEY }}
+          SHUB_APIKEY: ${{ secrets.SHUB_API_KEY }}
         run: |
-          shub deploy ${{ secrets.ZYTE_PROJECT_ID }}
+          shub deploy ${{ secrets.SHUB_PROJECT_ID }}
         working-directory: scrapers
