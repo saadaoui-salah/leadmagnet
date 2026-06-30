@@ -12,6 +12,10 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        account: ${{ fromJson(secrets.ZYTE_ACCOUNTS) }}
+      fail-fast: false
 
     steps:
       - name: Checkout code
@@ -31,7 +35,6 @@ jobs:
 
       - name: Deploy to Zyte
         env:
-          SHUB_APIKEY: ${{ secrets.SHUB_API_KEY }}
-        run: |
-          shub deploy ${{ secrets.SHUB_PROJECT_ID }}
+          SHUB_APIKEY: ${{ matrix.account.api_key }}
+        run: shub deploy ${{ matrix.account.project_id }}
         working-directory: scrapers
