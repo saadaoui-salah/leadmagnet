@@ -4,7 +4,7 @@ from datetime import datetime
 import scrapy
 from core.items import ZillowDetailItem
 
-GRAPHQL_HASH = "0526f7247361b0a89fd05a913cd382c93d5ec4d89e0284a0682eacc17378729e"
+GRAPHQL_HASH = "d13b637364fc1510923f11efa67cc3a335ee359781480f3ad8357f44eb788137"
 GRAPHQL_URL = "https://www.zillow.com/graphql/"
 
 
@@ -73,24 +73,19 @@ class ZillowDetailSpider(scrapy.Spider):
         return zpids[:self.limit] if self.limit else zpids
 
     def _build_request(self, zpid):
-        payload = {
-            "variables": {
-                "zpid": zpid,
-                "zillowPlatform": "DESKTOP",
-                "altId": None,
-                "skipVsxProperty": False,
-            },
-            "extensions": {
-                "persistedQuery": {
-                    "version": 1,
-                    "sha256Hash": GRAPHQL_HASH,
-                }
-            },
-        }
+        extensions = json.dumps({
+            "persistedQuery": {
+                "version": 1,
+                "sha256Hash": GRAPHQL_HASH,
+            }
+        })
+        variables = json.dumps({
+            "zpid": int(zpid),
+            "altId": None,
+        })
+        url = f"{GRAPHQL_URL}?extensions={extensions}&variables={variables}"
         return scrapy.Request(
-            GRAPHQL_URL,
-            method="POST",
-            body=json.dumps(payload),
+            url,
             callback=self.parse,
             cb_kwargs={"zpid": zpid},
             dont_filter=True,
@@ -101,7 +96,12 @@ class ZillowDetailSpider(scrapy.Spider):
             self.logger.warning("zpid %s: HTTP %d", zpid, response.status)
             return
 
-        data = json.loads(response.text)
+        try:
+            data = json.loads(response.text)
+        except json.JSONDecodeError:
+            self.logger.warning("zpid %s: invalid JSON response", zpid)
+            return
+
         prop = data.get("data", {}).get("property")
         if not prop:
             self.logger.warning("No data for zpid %s", zpid)
