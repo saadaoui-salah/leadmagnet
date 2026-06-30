@@ -39,8 +39,8 @@ LISTING_TYPES = ["rent", "sold", "sale"]
 # ──────────────────────────────────────────────────────────
 # CONFIG - Zillow Detail Spider (Account 2)
 # ──────────────────────────────────────────────────────────
-ZYTE_DETAIL_API_KEY = os.environ.get("ZYTE_DETAIL_API_KEY", "84d09476d2df4b238e0e763b992195d7")
-ZYTE_DETAIL_PROJECT_ID = os.environ.get("ZYTE_DETAIL_PROJECT_ID", "868681")
+ZYTE_DETAIL_API_KEY = os.environ.get("ZYTE_DETAIL_API_KEY")
+ZYTE_DETAIL_PROJECT_ID = os.environ.get("ZYTE_DETAIL_PROJECT_ID")
 
 DETAIL_BATCH_SIZE = 2000
 DETAIL_TOTAL_PROPERTIES = 55000
