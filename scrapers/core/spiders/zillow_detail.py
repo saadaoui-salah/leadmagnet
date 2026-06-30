@@ -47,14 +47,16 @@ class ZillowDetailSpider(scrapy.Spider):
             },
     }
 
-    def __init__(self, limit=None, **kwargs):
+    def __init__(self, limit=None, offset=0, batch=None, **kwargs):
         super().__init__(**kwargs)
         self.dashboard_url = 'http://212.85.17.52:81'
         self.limit = int(limit) if limit else None
+        self.offset = int(offset)
+        self.batch = int(batch) if batch else None
 
     async def start(self):
         zpids = await self._fetch_zpids()
-        self.logger.info("Loaded %d zpids to scrape", len(zpids))
+        self.logger.info("Loaded %d zpids (offset=%d, batch=%s)", len(zpids), self.offset, self.batch)
         for zpid in zpids:
             yield self._build_request(zpid)
 
@@ -70,7 +72,15 @@ class ZillowDetailSpider(scrapy.Spider):
         except Exception as e:
             self.logger.error("Failed to fetch zpids: %s", e)
             return []
-        return zpids[:self.limit] if self.limit else zpids
+
+        zpids = zpids[self.offset:]
+        if self.batch:
+            zpids = zpids[:self.batch]
+        if self.limit:
+            zpids = zpids[:self.limit]
+
+        self.logger.info("Processing %d zpids (offset=%d, batch=%s)", len(zpids), self.offset, self.batch)
+        return zpids
 
     def _build_request(self, zpid):
         extensions = json.dumps({
