@@ -1,3 +1,6 @@
 *.pyc
 *.json
 .env
+build
+setup.py
+project.egg-info

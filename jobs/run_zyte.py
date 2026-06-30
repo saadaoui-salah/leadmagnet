@@ -42,9 +42,8 @@ LISTING_TYPES = ["rent", "sold", "sale"]
 ZYTE_DETAIL_API_KEY = os.environ.get("ZYTE_DETAIL_API_KEY")
 ZYTE_DETAIL_PROJECT_ID = os.environ.get("ZYTE_DETAIL_PROJECT_ID")
 
-DETAIL_BATCH_SIZE = 2000
+DETAIL_BATCH_SIZE = 20
 DETAIL_TOTAL_PROPERTIES = 55000
-
 
 # ──────────────────────────────────────────────────────────
 # HELPERS
