@@ -1,40 +1,35 @@
-name: Deploy Scrapers to Zyte
-
-on:
-  push:
-    branches:
-      - master
-    paths:
-      - 'scrapers/**'
-      - '.github/workflows/deploy-zyte.yml'
-  workflow_dispatch:
-
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      accounts: ${{ steps.accounts.outputs.accounts }}
+    steps:
+      - id: accounts
+        run: echo "accounts=${{ secrets.ZYTE_ACCOUNTS }}" >> "$GITHUB_OUTPUT"
+
   deploy:
+    needs: prepare
     runs-on: ubuntu-latest
     strategy:
-      matrix:
-        account: ${{ fromJson(secrets.ZYTE_ACCOUNTS) }}
       fail-fast: false
+      matrix:
+        account: ${{ fromJson(needs.prepare.outputs.accounts) }}
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
-      - name: Install shub
-        run: pip install shub
+      - run: pip install shub
 
-      - name: Install scraper dependencies
-        run: pip install -r requirements.txt
+      - run: pip install -r requirements.txt
         working-directory: scrapers
 
-      - name: Deploy to Zyte
+      - name: Deploy
+        working-directory: scrapers
         env:
           SHUB_APIKEY: ${{ matrix.account.api_key }}
-        run: shub deploy ${{ matrix.account.project_id }}
-        working-directory: scrapers
+        run: |
+          shub deploy ${{ matrix.account.project_id }}
