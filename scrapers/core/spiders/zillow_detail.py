@@ -58,11 +58,10 @@ class ZillowDetailSpider(scrapy.Spider):
         items = await self._fetch_zpids()
         self.logger.info("Loaded %d items (offset=%d, batch=%s)", len(items), self.offset, self.batch)
         for item in items:
-            item['detail_link'] = 'https://www.zillow.com/b/10002-e-bay-harbor-dr-miami-beach-fl-Crk5dy/'
             if item['detail_link'].endswith("_zpid/"):
                 yield self._build_request(item['zpid'])
             else:
-                yield self._build_rent_request(item['detail_link'])
+                yield self._build_rent_request(item)
 
     async def _fetch_zpids(self):
         import urllib.request
