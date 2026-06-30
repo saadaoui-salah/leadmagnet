@@ -1,2 +1,2 @@
-scrapy
+Scrapy==2.16.0
 curl_cffi
