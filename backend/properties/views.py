@@ -108,9 +108,8 @@ def receive_property_detail(request):
     if not zpid:
         return Response({"error": "zpid is required"}, status=status.HTTP_400_BAD_REQUEST)
 
-    try:
-        prop = Property.objects.get(zpid=str(zpid))
-    except Property.DoesNotExist:
+    prop = Property.objects.filter(zpid=str(zpid)).first()
+    if not prop:
         return Response({"error": f"Property with zpid {zpid} not found"}, status=status.HTTP_404_NOT_FOUND)
 
     unit_fields = [
