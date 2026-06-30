@@ -1,3 +1,14 @@
+name: Deploy Scrappers to ZYTE
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - "scrapers/**"
+      - ".github/workflows/deploy-zyte.yml"
+  workflow_dispatch:
+
 jobs:
   prepare:
     runs-on: ubuntu-latest
