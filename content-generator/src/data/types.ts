@@ -71,4 +71,20 @@ export type ZillowMarketData = {
   rentDrops?: Array<{ zip: string; city: string; state: string; rent_growth: number; avg_rent: number }>;
   trends: TrendPoint[];
   generatedCopy?: GeneratedCopy;
+  winnerInfo?: WinnerInfo;
+};
+
+export type WinnerInfo = {
+  zipcode: string;
+  city: string;
+  state: string;
+  score: number;
+  breakdown: { growth: number; volume: number; demand: number; yield: number };
+  metrics: {
+    avg_rent: number;
+    rent_growth: number;
+    active_listings: number;
+    inventory_change: number;
+    median_home_value: number;
+  };
 };
