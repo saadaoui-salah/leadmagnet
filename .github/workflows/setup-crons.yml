@@ -37,13 +37,14 @@ jobs:
             source venv/bin/activate || python3 -m venv ~/jobs/venv && source venv/bin/activate
             pip install -r requirements.txt
 
-            echo "Setting up cron job..."
-            CRON_CMD="0 2 * * * cd ~/jobs && . venv/bin/activate && python run_zyte.py --listing-types rent sold sale >> /var/log/zyte-cron.log 2>&1"
+            echo "Setting up cron jobs..."
+            SEARCH_CRON="0 2 * * * cd ~/jobs && . venv/bin/activate && python run_zyte.py --listing-types rent sold sale >> /var/log/zyte-cron.log 2>&1"
+            DETAIL_CRON="30 2 * * * cd ~/jobs && . venv/bin/activate && python run_zyte.py --spider detail >> /var/log/zyte-detail-cron.log 2>&1"
 
-            # Remove old entry if exists, add new
-            (crontab -l 2>/dev/null | grep -v "run_zyte.py"; echo "$CRON_CMD") | crontab -
+            # Remove old entries, add new
+            (crontab -l 2>/dev/null | grep -v "run_zyte.py"; echo "$SEARCH_CRON"; echo "$DETAIL_CRON") | crontab -
 
-            echo "Cron job installed:"
+            echo "Cron jobs installed:"
             crontab -l | grep run_zyte
 
             echo "Done!"
