@@ -24,6 +24,7 @@ class LeadMagnetAdmin(admin.AdminSite):
     def get_urls(self):
         custom_urls = [
             path("run-zyte/", self.admin_view(self.run_zyte_view), name="run-zyte"),
+            path("run-zyte-detail/", self.admin_view(self.run_zyte_detail_view), name="run-zyte-detail"),
         ]
         return custom_urls + super().get_urls()
 
@@ -69,6 +70,24 @@ class LeadMagnetAdmin(admin.AdminSite):
                         request,
                         f"Zyte spider [{listing_type}]: {success} jobs submitted, {errors} failed"
                     )
+            return self.index(request)
+        return self.index(request)
+
+    def run_zyte_detail_view(self, request):
+        if request.method == "POST":
+            api_key = os.environ.get("ZYTE_DETAIL_API_KEY", "84d09476d2df4b238e0e763b992195d7")
+            project_id = os.environ.get("ZYTE_DETAIL_PROJECT_ID", "868681")
+            batch_size = int(request.POST.get("batch_size", 2000))
+            total = int(request.POST.get("total", 55000))
+
+            if not api_key:
+                messages.error(request, "ZYTE_DETAIL_API_KEY not set in environment")
+            else:
+                success, errors = self._submit_detail_jobs(api_key, project_id, batch_size, total)
+                messages.success(
+                    request,
+                    f"Zyte detail spider: {success} jobs submitted, {errors} failed"
+                )
             return self.index(request)
         return self.index(request)
 
@@ -129,6 +148,54 @@ class LeadMagnetAdmin(admin.AdminSite):
             except Exception as e:
                 print(f"[Zyte] Error: {e}")
                 errors += 1
+        return success, errors
+
+    def _submit_detail_jobs(self, api_key, project_id, batch_size, total):
+        api_url = "https://app.zyte.com/api/run.json"
+        success = 0
+        errors = 0
+        offsets = range(0, total, batch_size)
+
+        for offset in offsets:
+            payload = {
+                "project": project_id,
+                "spider": "zillow_detail",
+                "units": 1,
+                "add_tag": f"detail-batch-{offset}",
+                "batch": str(batch_size),
+                "offset": str(offset),
+            }
+
+            print(f"[Zyte Detail] Submitting batch: offset={offset}, batch_size={batch_size}")
+
+            auth = base64.b64encode(f"{api_key}:".encode()).decode()
+            req = Request(
+                api_url,
+                data=urlencode(payload).encode("utf-8"),
+                headers={
+                    "Content-Type": "application/x-www-form-urlencoded",
+                    "Authorization": f"Basic {auth}",
+                },
+                method="POST",
+            )
+
+            try:
+                with urlopen(req, timeout=30) as resp:
+                    result = json.loads(resp.read())
+                    if result.get("status") == "ok":
+                        job_id = result.get("jobid", "unknown")
+                        print(f"[Zyte Detail] Job submitted: {job_id}")
+                        success += 1
+                    else:
+                        print(f"[Zyte Detail] Job failed: {result}")
+                        errors += 1
+            except URLError as e:
+                print(f"[Zyte Detail] Request failed: {e}")
+                errors += 1
+            except Exception as e:
+                print(f"[Zyte Detail] Error: {e}")
+                errors += 1
+            time.sleep(1)
         return success, errors
 
 
