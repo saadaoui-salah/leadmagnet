@@ -283,9 +283,9 @@ def receive_property_detail(request):
 @api_view(["GET"])
 def property_zpids(request):
     source = request.query_params.get("source", "zillow")
-    qs = Property.objects.filter(source=source).exclude(zpid="").values_list("zpid", flat=True)
-    numeric = [z for z in qs if z and z.isdigit()]
-    return Response({"count": len(numeric), "zpids": numeric})
+    qs = Property.objects.filter(source=source).exclude(zpid="").values("zpid", "detail_url")
+    results = [{"zpid": z["zpid"], "detail_link": z["detail_url"]} for z in qs if z["zpid"] and z["zpid"].isdigit()]
+    return Response({"count": len(results), "zpids": results})
 
 
 @api_view(["GET"])

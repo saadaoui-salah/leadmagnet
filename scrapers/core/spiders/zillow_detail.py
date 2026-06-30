@@ -53,12 +53,16 @@ class ZillowDetailSpider(scrapy.Spider):
         self.limit = int(limit) if limit else None
         self.offset = int(offset)
         self.batch = int(batch) if batch else None
-
+    
     async def start(self):
-        zpids = await self._fetch_zpids()
-        self.logger.info("Loaded %d zpids (offset=%d, batch=%s)", len(zpids), self.offset, self.batch)
-        for zpid in zpids:
-            yield self._build_request(zpid)
+        items = await self._fetch_zpids()
+        self.logger.info("Loaded %d items (offset=%d, batch=%s)", len(items), self.offset, self.batch)
+        for item in items:
+            item['detail_link'] = 'https://www.zillow.com/b/10002-e-bay-harbor-dr-miami-beach-fl-Crk5dy/'
+            if item['detail_link'].endswith("_zpid/"):
+                yield self._build_request(item['zpid'])
+            else:
+                yield self._build_rent_request(item['detail_link'])
 
     async def _fetch_zpids(self):
         import urllib.request
@@ -81,6 +85,31 @@ class ZillowDetailSpider(scrapy.Spider):
 
         self.logger.info("Processing %d zpids (offset=%d, batch=%s)", len(zpids), self.offset, self.batch)
         return zpids
+
+    def _build_rent_request(self, item):
+        payload = json.dumps({
+            "operationName": "BuildingQuery",
+            "variables": {
+                "buildingKey": item['detail_link'].split("/")[-2].split("-")[-1],
+                "cache": False,
+                "latitude": None,
+                "longitude": None,
+                "lotId": None,
+                "update": False
+            },
+            "extensions": {
+                "persistedQuery": {
+                    "version": 1,
+                    "sha256Hash": "0354b96901717e5734161376ceeb542a9da5063f389a3151f5cfb5864feef639"
+                }
+            }
+        })
+        return scrapy.Request(
+            url="https://www.zillow.com/zg-graph",
+            method="POST",
+            body=payload,
+            callback=self.parse,
+        )
 
     def _build_request(self, zpid):
         extensions = json.dumps({
