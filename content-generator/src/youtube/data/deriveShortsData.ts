@@ -5,22 +5,12 @@ import type {
 } from "../../data/types";
 import type {
   ShortsComparison,
-  ShortsMode,
   ZipForComparison,
   ComparisonMetric,
 } from "./types";
 import { buildShortsCopy } from "../shortsCopy";
 
-type RentDrop = {
-  zip: string;
-  city: string;
-  state: string;
-  rent_growth: number;
-  avg_rent: number;
-};
-
-const safe = (n: number | undefined | null, fallback = 0) =>
-  typeof n === "number" && Number.isFinite(n) ? n : fallback;
+type RentDrop = NonNullable<ZillowMarketData["rentDrops"]>[number];
 
 function zipPerformanceToComparison(
   z: ZipPerformance,
@@ -139,7 +129,7 @@ function buildMetrics(a: ZipForComparison, b: ZipForComparison): ComparisonMetri
 export function deriveShortsWinnerVsRunnerUp(
   market: ZillowMarketData
 ): ShortsComparison | null {
-  const winnerRaw = (market.winnerInfo as WinnerInfo) ?? undefined;
+  const winnerRaw = market.winnerInfo;
   const rentDrops = market.rentDrops ?? [];
 
   let zipA: ZipForComparison;
@@ -175,7 +165,7 @@ export function deriveShortsWinnerVsRunnerUp(
 export function deriveShortsWinnerVsLoser(
   market: ZillowMarketData
 ): ShortsComparison | null {
-  const winnerRaw = (market.winnerInfo as WinnerInfo) ?? undefined;
+  const winnerRaw = market.winnerInfo;
   const rentDrops = market.rentDrops ?? [];
 
   let zipA: ZipForComparison;

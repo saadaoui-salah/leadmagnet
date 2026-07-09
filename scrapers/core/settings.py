@@ -40,13 +40,71 @@ DOWNLOAD_DELAY = 1
 
 # Enable or disable spider middlewares
 # See https://docs.scrapy.org/en/latest/topics/spider-middleware.html
-#SPIDER_MIDDLEWARES = {
-#    "core.middlewares.CoreSpiderMiddleware": 543,
-#}
+# ── Spider Middlewares ───────────────────────────────────────────────────
+SPIDER_MIDDLEWARES = {
+    "core.cost_calculator.ProxyCostCalculatorMiddleware": 500,
+}
 
 DOWNLOADER_MIDDLEWARES = {
     "core.middlewares.CurlCffiDownloaderMiddleware": 400,
     "scrapy.downloadermiddlewares.useragent.UserAgentMiddleware": None,
+}
+
+# ── Proxy Configuration (Webshare) ──────────────────────────────────────
+# Set WEBSHARE_API_TOKEN in .env or here. Get a key at:
+#   https://dashboard.webshare.io/userapi/keys
+#
+# from dotenv import load_dotenv
+# load_dotenv()
+# WEBSHARE_API_TOKEN = os.getenv("WEBSHARE_API_TOKEN", "")
+
+PROXY_ENABLED = False  # Set True to enable proxy rotation
+
+# Proxy provider: "webshare" | "oxylabs" | "static"
+PROXY_PROVIDER = "webshare"
+
+# Proxy type for pricing: "datacenter" | "residential" | "static_residential" | "isp" | "dedicated_datacenter"
+PROXY_TYPE = "datacenter"
+
+# Cost tracking overrides (optional — if not set, uses provider defaults)
+# PROXY_COST_MODEL = "per_gb"            # per_gb | per_ip_monthly | per_request
+# PROXY_COST_RESIDENTIAL_PER_GB = 6.00   # $/GB for residential
+# PROXY_COST_DATACENTER_PER_IP = 1.20    # $/IP/month for datacenter
+
+# Rotation strategy: "round-robin" | "random" | "least-used"
+PROXY_ROTATION = "round-robin"
+
+# Country filter — ISO 3166-1 alpha-2 codes, comma-separated.
+# "ZZ" = any country, "US" = United States only, "US,GB" = US or UK.
+PROXY_LOCATION = "ZZ"
+
+# Proxy mode: "direct" (unique IPs per proxy) or "backbone" (single gateway, rotating IP)
+PROXY_MODE = "direct"
+
+# Specific Webshare plan ID (optional — omit to use default plan)
+# PROXY_PLAN_ID = 1234
+
+# Seconds between API refreshes (proxies are cached locally)
+PROXY_REFRESH_INTERVAL = 300
+
+# Named sessions — each session has its own proxy pool and strategy.
+# Spiders set proxy_session = "session_name" to pick one.
+PROXY_SESSIONS = {
+    "default": {
+        "strategy": "round-robin",
+        "country": "ZZ",
+        "mode": "direct",
+    },
+    # "premium": {
+    #     "strategy": "random",
+    #     "country": "US",
+    #     "mode": "direct",
+    # },
+    # "scraping": {
+    #     "strategy": "least-used",
+    #     "country": "US,GB,CA",
+    #     "mode": "backbone",
+    # },
 }
 
 # Enable or disable extensions

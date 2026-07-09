@@ -9,3 +9,9 @@ dist/
 .agents
 skills-lock*
 credentials.json
+public/audio/shorts/
+public/audio/music/
+public/audio/sfx/
+voices/
+src/data/generatedShortsCopy.json
+src/data/generatedShortsNarration.json

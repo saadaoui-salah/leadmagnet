@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "proxy-manager": {
+      "source": "webshare-proxy/skills",
+      "sourceType": "github",
+      "skillPath": "proxy-manager/SKILL.md",
+      "computedHash": "552c9a219a4af92f4157430f8463cdacedec8c86e52433ff8053a69274c066e6"
+    }
+  }
+}

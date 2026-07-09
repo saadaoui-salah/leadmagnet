@@ -10,10 +10,12 @@
     "export:images": "powershell -ExecutionPolicy Bypass -File scripts/export-images.ps1",
     "export:linkedin-pdf": "powershell -ExecutionPolicy Bypass -File scripts/export-linkedin-pdf.ps1",
     "export:instagram": "powershell -ExecutionPolicy Bypass -File scripts/export-instagram-images.ps1",
+    "generate:shorts-audio": "powershell -ExecutionPolicy Bypass -File scripts/generate-shorts-audio.ps1",
+    "export:shorts": "powershell -ExecutionPolicy Bypass -File scripts/export-youtube-shorts.ps1",
     "typecheck": "tsc --noEmit",
     "dashboard": "cd dashboard && npm run dev",
-    "sync:slides": "xcopy /E /I /Y out\\linkedin dashboard\\public\\out\\linkedin & xcopy /E /I /Y out\\instagram dashboard\\public\\out\\instagram",
-    "export:all": "npm run export:linkedin-pdf & npm run export:instagram & npm run sync:slides"
+    "sync:slides": "xcopy /E /I /Y out\\linkedin dashboard\\public\\out\\linkedin & xcopy /E /I /Y out\\instagram dashboard\\public\\out\\instagram & xcopy /E /I /Y out\\youtube-shorts dashboard\\public\\out\\youtube-shorts",
+    "export:all": "npm run export:linkedin-pdf & npm run export:instagram & npm run export:shorts & npm run sync:slides"
   },
   "dependencies": {
     "@remotion/cli": "4.0.482",

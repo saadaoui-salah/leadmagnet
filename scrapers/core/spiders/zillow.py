@@ -4,6 +4,7 @@ from urllib.parse import urljoin
 
 import scrapy
 from core.items import ZillowListing
+from core.browser_profiles import get_random_profile, get_headers
 
 
 FILTERS = {
@@ -54,27 +55,12 @@ class ZillowSpider(scrapy.Spider):
             "scrapy.downloadermiddlewares.httpcompression.HttpCompressionMiddleware":None,
             "scrapy.downloadermiddlewares.useragent.UserAgentMiddleware": None,
         },
-        "DEFAULT_REQUEST_HEADERS": {
-            "accept": "*/*",
-            "accept-language": "en-US,en;q=0.9",
-            "content-type": "application/json",
-            "dnt": "1",
-            "origin": "https://www.zillow.com",
-            "referer": "https://www.zillow.com/homes/for_rent/",
-            "sec-ch-ua": '"Google Chrome";v="149", "Chromium";v="149", "Not)A;Brand";v="24"',
-            "sec-ch-ua-mobile": "?0",
-            "sec-ch-ua-platform": '"Windows"',
-            "sec-fetch-dest": "empty",
-            "sec-fetch-mode": "cors",
-            "sec-fetch-site": "same-origin",
-            "user-agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/149.0.0.0 Safari/537.36"
-            ),
-        },
     }
-
+    proxy_provider = "webshare"
+    proxy_session = "default"
+    proxy_rotation = "round-robin"
+    proxy_location = "US"
+    proxy_type = "datacenter"
     LISTING_TYPES = {
         "rent": "rentals/",
         "sold": "sold/",

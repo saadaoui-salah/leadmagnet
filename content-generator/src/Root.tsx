@@ -1,13 +1,10 @@
 import React from "react";
-import { CalculateMetadataFunction, Composition } from "remotion";
+import { Composition } from "remotion";
 import { ZillowCarousel, SLIDE_COUNT, SLIDE_DURATION } from "./ZillowCarousel";
 import { InstagramCarousel, INSTAGRAM_SLIDE_COUNT, INSTAGRAM_SLIDE_DURATION } from "./instagram/InstagramCarousel";
-import type { InstagramCarouselProps } from "./instagram/InstagramCarousel";
-import { getGeneratedMarketSync } from "./data/loadGenerated";
 import { getInstagramAnalyticsSync } from "./instagram/api/zillowAnalyticsService";
 import { YouTubeShortsWinnerVsRunnerUp, WINNER_VS_RUNNER_UP_DURATION } from "./youtube/YouTubeShortsWinnerVsRunnerUp";
 import { YouTubeShortsWinnerVsLoser, WINNER_VS_LOSER_DURATION } from "./youtube/YouTubeShortsWinnerVsLoser";
-import type { YouTubeShortsProps } from "./youtube/YouTubeShortsWinnerVsRunnerUp";
 import { loadFont as loadInter } from "@remotion/google-fonts/Inter";
 import { loadFont as loadFiraCode } from "@remotion/google-fonts/FiraCode";
 
@@ -21,21 +18,6 @@ loadFiraCode("normal", {
   subsets: ["latin"],
   ignoreTooManyRequestsWarning: true
 });
-
-const calculateInstagramMetadata: CalculateMetadataFunction<InstagramCarouselProps> = async () => ({
-  props: {
-    analyticsState: { status: "ready", data: getInstagramAnalyticsSync() }
-  }
-});
-
-const calculateShortsMetadata: CalculateMetadataFunction<YouTubeShortsProps & { audioMode: "tts" | "silent" }> = async () => {
-  const hasAudio = await import("./data/generatedShortsNarration.json")
-    .then((m) => Boolean((m.default ?? m)?.runnerUp?.length))
-    .catch(() => false);
-  return {
-    props: { audioMode: hasAudio ? "tts" : "silent" },
-  };
-};
 
 export const RemotionRoot = () => (
   <>
@@ -55,7 +37,6 @@ export const RemotionRoot = () => (
       width={1080}
       height={1350}
       defaultProps={{ analyticsState: { status: "ready", data: getInstagramAnalyticsSync() } }}
-      calculateMetadata={calculateInstagramMetadata}
     />
     <Composition
       id="YouTubeShortsWinnerVsRunnerUp"
@@ -64,8 +45,7 @@ export const RemotionRoot = () => (
       fps={30}
       width={1080}
       height={1920}
-      defaultProps={{ audioMode: "silent" }}
-      calculateMetadata={calculateShortsMetadata}
+      defaultProps={{ audioMode: "silent" as const }}
     />
     <Composition
       id="YouTubeShortsWinnerVsLoser"
@@ -74,8 +54,7 @@ export const RemotionRoot = () => (
       fps={30}
       width={1080}
       height={1920}
-      defaultProps={{ audioMode: "silent" }}
-      calculateMetadata={calculateShortsMetadata}
+      defaultProps={{ audioMode: "silent" as const }}
     />
   </>
 );

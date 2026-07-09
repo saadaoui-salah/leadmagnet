@@ -55,4 +55,6 @@ export const slides: Slide[] = [
   { id: 19, platform: 'instagram', file: '/out/instagram/instagram-09.png', title: 'Prediction', desc: 'Forward outlook' },
   { id: 20, platform: 'instagram', file: '/out/instagram/instagram-10.png', title: 'CTA', desc: 'Follow call to action' },
   { id: 100, platform: 'linkedin', file: '/out/linkedin/LinkedIn-Carousel.pdf', title: 'LinkedIn Carousel PDF', desc: 'Combined PDF for LinkedIn upload', isPdf: true },
+  { id: 200, platform: 'youtube', file: '/out/youtube-shorts/short-winner-vs-runner-up.mp4', title: 'Short: Winner vs Runner-Up', desc: 'ZIP code comparison short - two hot markets', isVideo: true },
+  { id: 201, platform: 'youtube', file: '/out/youtube-shorts/short-winner-vs-loser.mp4', title: 'Short: Winner vs Loser', desc: 'ZIP code comparison short - soaring vs crashing', isVideo: true },
 ];

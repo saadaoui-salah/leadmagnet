@@ -66,31 +66,45 @@ async function runPipeline() {
 
   try {
     status.step = 'Fetching market data & generating copy...'
-    status.progress = 10
+    status.progress = 8
     const pythonCmd = process.platform === 'win32'
       ? 'python scripts/generate_market_copy.py'
       : 'python3 scripts/generate_market_copy.py'
     await execAsync(pythonCmd, { cwd: ROOT, maxBuffer: 10 * 1024 * 1024 })
 
     status.step = 'Exporting LinkedIn slides as PDF...'
-    status.progress = 35
+    status.progress = 28
     const linkedinCmd = process.platform === 'win32'
       ? 'powershell -ExecutionPolicy Bypass -File scripts/export-linkedin-pdf.ps1'
       : 'node scripts/export-images.mjs'
     await execAsync(linkedinCmd, { cwd: ROOT, maxBuffer: 10 * 1024 * 1024 })
 
     status.step = 'Exporting Instagram slides...'
-    status.progress = 65
+    status.progress = 48
     const igCmd = process.platform === 'win32'
       ? 'powershell -ExecutionPolicy Bypass -File scripts/export-instagram-images.ps1'
       : 'node scripts/export-instagram-images.mjs'
     await execAsync(igCmd, { cwd: ROOT, maxBuffer: 10 * 1024 * 1024 })
 
-    status.step = 'Syncing slides to dashboard...'
-    status.progress = 90
+    status.step = 'Generating Shorts TTS audio...'
+    status.progress = 60
+    const audioCmd = process.platform === 'win32'
+      ? 'powershell -ExecutionPolicy Bypass -File scripts/generate-shorts-audio.ps1'
+      : 'node scripts/generate-shorts-audio.mjs'
+    await execAsync(audioCmd, { cwd: ROOT, maxBuffer: 10 * 1024 * 1024 })
+
+    status.step = 'Rendering YouTube Shorts video...'
+    status.progress = 72
+    const shortsCmd = process.platform === 'win32'
+      ? 'powershell -ExecutionPolicy Bypass -File scripts/export-youtube-shorts.ps1'
+      : 'node scripts/export-youtube-shorts.mjs'
+    await execAsync(shortsCmd, { cwd: ROOT, maxBuffer: 50 * 1024 * 1024 })
+
+    status.step = 'Syncing output to dashboard...'
+    status.progress = 94
     const syncCmd = process.platform === 'win32'
-      ? 'xcopy /E /I /Y out\\linkedin dashboard\\public\\out\\linkedin & xcopy /E /I /Y out\\instagram dashboard\\public\\out\\instagram'
-      : 'cp -r out/linkedin dashboard/public/out/linkedin && cp -r out/instagram dashboard/public/out/instagram'
+      ? 'xcopy /E /I /Y out\\linkedin dashboard\\public\\out\\linkedin & xcopy /E /I /Y out\\instagram dashboard\\public\\out\\instagram & xcopy /E /I /Y out\\youtube-shorts dashboard\\public\\out\\youtube-shorts'
+      : 'cp -r out/linkedin dashboard/public/out/linkedin && cp -r out/instagram dashboard/public/out/instagram && cp -r out/youtube-shorts dashboard/public/out/youtube-shorts'
     await execAsync(syncCmd, { cwd: ROOT, maxBuffer: 10 * 1024 * 1024 })
 
     status.step = 'Done!'

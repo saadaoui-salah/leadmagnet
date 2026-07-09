@@ -85,6 +85,57 @@ def fetch_market_data(zipcode="10001"):
     }
 
 
+def build_shorts_scenes(mode, data, winner_info=None):
+    """Build 7 narration scenes for a YouTube Short.
+
+    Each scene has a 'text' field used for TTS narration.
+    """
+    top_zips = data.get("top_zips", [])
+    zip_a_label = winner_info.get("zipcode", "") if winner_info else (top_zips[0].split(":")[0].strip() if top_zips else "")
+    zip_b_line = top_zips[1] if len(top_zips) > 1 else ""
+
+    city = data.get("city", "this market")
+    median_rent = data.get("median_rent", 0)
+    rent_growth = data.get("rent_growth_30d", 0)
+    score = winner_info.get("score", 80) if winner_info else 80
+
+    if mode == "winner-vs-runner-up":
+        zip_b_label = zip_b_line.split(":")[0].strip().split(" ")[0] if zip_b_line else "the runner-up"
+        scenes = [
+            {"text": f"Two ZIP codes in {city}. Both on fire. But only one is investable right now."},
+            {"text": f"First, ZIP {zip_a_label}. Investor score {score} out of 100. Median rent ${median_rent:,}. Rent growth {rent_growth}%."},
+            {"text": f"Now the runner-up, ZIP {zip_b_label}. Hot, but not the leader. The spread between them is where the opportunity hides."},
+            {"text": f"Head to head. {zip_a_label} versus {zip_b_label}. Rent, growth, yield, demand. Watch the bars race."},
+            {"text": f"The key difference is rent growth. That gap is your edge as an investor."},
+            {"text": f"High demand plus compressed inventory means pricing power. {city} landlords are in control."},
+            {"text": f"Comment REPORT to get the full ZIP code analysis with investor scores."},
+        ]
+    else:  # winner-vs-loser
+        drops = data.get("_rent_drops", [])
+        loser_zip = drops[0].get("zip", "") if drops else ""
+        loser_drop = drops[0].get("rent_growth", 0) if drops else -10
+
+        scenes = [
+            {"text": f"One ZIP in {city} is soaring. Another is crashing. Here is the comparison that matters."},
+            {"text": f"First, the winner, ZIP {zip_a_label}. Investor score {score} out of 100. Rent growth {rent_growth}%. Median rent ${median_rent:,}."},
+            {"text": f"Now the loser, ZIP {loser_zip}. Rent down {abs(loser_drop)}%. This is where tenants are winning and investors are fleeing."},
+            {"text": f"Head to head. The winner versus the loser. The contrast is brutal. Watch the numbers."},
+            {"text": f"The key difference is the growth spread. One rising, one falling. That divergence is your signal."},
+            {"text": f"When one ZIP drops while another gains, the spread is where the opportunity lives. Pick the winner."},
+            {"text": f"Comment REPORT to get the full ZIP code analysis with investor scores."},
+        ]
+
+    return {"scenes": scenes}
+
+
+def build_shorts_copy(data, winner_info=None):
+    """Build shorts narration copy for both modes."""
+    return {
+        "runnerUp": build_shorts_scenes("winner-vs-runner-up", data, winner_info),
+        "winnerVsLoser": build_shorts_scenes("winner-vs-loser", data, winner_info),
+    }
+
+
 def build_prompt(data, winner_info=None):
     zip_list = "\n".join(data["top_zips"]) if data["top_zips"] else "  (no zip code data available)"
     rental_list = "\n".join(data["rental_breakdown"]) if data["rental_breakdown"] else "  (no rental breakdown available)"
@@ -269,6 +320,14 @@ def main():
     # Fetch market data for the winning zipcode
     data = fetch_market_data(zipcode)
 
+    # Fetch rent drops for shorts (winner-vs-loser mode)
+    try:
+        drops = fetch_json(f"{BACKEND_API}/api/analytics/rent-drops/?limit=10")
+        data["_rent_drops"] = drops if isinstance(drops, list) else []
+    except Exception as e:
+        print(f"[API] rent-drops fetch failed: {e}")
+        data["_rent_drops"] = []
+
     # Generate copy with Ollama
     prompt = build_prompt(data, winner_info)
     generated_copy = generate_with_ollama(prompt)
@@ -281,6 +340,13 @@ def main():
     output_path = os.path.join(script_dir, "..", "src", "data", "generatedMarket.json")
     with open(output_path, "w") as f:
         json.dump(market_data, f, indent=2)
+
+    # Generate and save shorts narration copy
+    shorts_copy = build_shorts_copy(data, winner_info)
+    shorts_output_path = os.path.join(script_dir, "..", "src", "data", "generatedShortsCopy.json")
+    with open(shorts_output_path, "w") as f:
+        json.dump({"shortsCopy": shorts_copy}, f, indent=2)
+    print(f"[Shorts] Narration copy saved to {shorts_output_path}")
 
     print(f"\n[Done] Generated market data saved to {output_path}")
     print(f"[Copy] Hook: {generated_copy.get('hook', 'N/A')}")

@@ -47,6 +47,7 @@ INSTALLED_APPS = [
     'corsheaders',
     'properties',
     'analytics',
+    'agent',
 ]
 
 REST_FRAMEWORK = {

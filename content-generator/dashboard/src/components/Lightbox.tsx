@@ -67,17 +67,29 @@ export function Lightbox({ slides, currentIndex, onClose, onPrev, onNext }: Prop
         <ChevronRight className="w-6 h-6" />
       </button>
 
-      {/* Image + info */}
+      {/* Media + info */}
       <div
         className="flex flex-col items-center"
-        style={{ maxWidth: 480, width: '100%' }}
+        style={{ maxWidth: slide.isVideo ? 340 : 480, width: '100%' }}
       >
-        <img
-          src={slide.file}
-          alt={slide.title}
-          className="w-full object-contain rounded-xl"
-          style={{ maxHeight: '75vh', background: '#000' }}
-        />
+        {slide.isVideo ? (
+          <video
+            src={slide.file}
+            className="w-full object-contain rounded-xl"
+            style={{ maxHeight: '80vh', background: '#000' }}
+            controls
+            autoPlay
+            loop
+            playsInline
+          />
+        ) : (
+          <img
+            src={slide.file}
+            alt={slide.title}
+            className="w-full object-contain rounded-xl"
+            style={{ maxHeight: '75vh', background: '#000' }}
+          />
+        )}
         <div style={{ marginTop: 20, textAlign: 'center' }}>
           <p
             className="font-semibold"
@@ -94,7 +106,7 @@ export function Lightbox({ slides, currentIndex, onClose, onPrev, onNext }: Prop
               className="text-muted font-mono"
               style={{ fontSize: 14 }}
             >
-              Slide {slide.id} of 10 — {slide.desc}
+              {slide.desc}
             </p>
           </div>
         </div>

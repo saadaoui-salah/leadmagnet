@@ -42,5 +42,6 @@ urlpatterns = [
     path('admin/', admin_site.urls),
     path('api/', include('properties.urls')),
     path('api/analytics/', include('analytics.urls')),
+    path('api/agent/', include('agent.urls')),
     path('health/', health_check, name='health-check'),
 ]

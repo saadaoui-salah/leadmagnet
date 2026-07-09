@@ -305,7 +305,7 @@ export const Slide9Prediction = ({ data }: { data: InstagramAnalyticsData }) => 
           <div style={{ ...slideIn(12), display: "flex", flexDirection: "column", gap: 18 }}>
             <KpiChip label="Rent" value={formatMetric(story.rentDelta, "percent")} />
             <KpiChip label="Inventory" value={formatMetric(story.inventoryDelta, "percent")} tone="warning" />
-            <KpiChip label="Pulse" value={formatMetric(data.marketPulse.rent_change_pct, "percent")} tone="secondary" />
+            <KpiChip label="Pulse" value={formatMetric(data.marketPulse?.rent_change_pct, "percent")} tone="secondary" />
           </div>
           <InsightCard icon={Eye} title={prediction} detail="The next inventory print matters more than the last rent headline." tone="secondary" delay={18} />
         </div>
