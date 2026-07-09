@@ -27,6 +27,11 @@ ADDONS = {}
 # Obey robots.txt rules
 ROBOTSTXT_OBEY = False
 
+# Retry settings
+RETRY_ENABLED = True
+RETRY_TIMES = 15
+RETRY_HTTP_CODES = [500, 502, 503, 504, 522, 524, 408, 429]
+
 # Concurrency and throttling settings
 #CONCURRENT_REQUESTS = 16
 CONCURRENT_REQUESTS_PER_DOMAIN = 3
