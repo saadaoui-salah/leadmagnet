@@ -80,26 +80,56 @@ class CurlCffiDownloaderMiddleware:
         if not self.proxy_enabled or not self._proxy_mgr:
             return None
 
-        # Spider can override session/rotation/location via class vars
+        # Spider can override session/rotation/location/type via class vars
         session = getattr(spider, "proxy_session", "default")
         rotation = getattr(spider, "proxy_rotation", None)
         location = getattr(spider, "proxy_location", None)
+        proxy_type = getattr(spider, "proxy_type", None)
 
-        # Dynamic override: if spider sets proxy_rotation or proxy_location,
+        # Dynamic override: if spider sets proxy_rotation, proxy_location, or proxy_type,
         # rebuild the session config on the fly
-        if rotation or location:
+        if rotation or location or proxy_type:
             mgr = self._proxy_mgr
             cfg = mgr.sessions.get(session, {}).copy()
             if rotation:
                 cfg["strategy"] = rotation
             if location:
                 cfg["country"] = location
+            if proxy_type:
+                cfg["proxy_type"] = proxy_type
+                # Map proxy_type to Webshare mode
+                if proxy_type == "backbone":
+                    cfg["mode"] = "backbone"
+                elif proxy_type in ("datacenter", "static_residential", "residential"):
+                    cfg["mode"] = "direct"
             mgr.sessions[session] = cfg
             mgr._build_iterator(session)
 
         if rotation == "random" or location:
             return self._proxy_mgr.get_random_proxy(session=session)
         return self._proxy_mgr.get_proxy(session=session)
+
+    def process_response(self, request, response, spider):
+        """Check response for blocking indicators and mark proxy as bad if needed."""
+        if not self.proxy_enabled or not self._proxy_mgr:
+            return response
+
+        # Check if response indicates blocking
+        blocked_status = {403, 429, 503}
+        if response.status in blocked_status:
+            proxy = request.meta.get("proxy")
+            if proxy and self._proxy_mgr:
+                session = getattr(spider, "proxy_session", "default")
+                # Extract proxy ID from URL
+                from urllib.parse import urlparse
+                parsed = urlparse(proxy)
+                proxy_id = f"{parsed.hostname}:{parsed.port}"
+                self._proxy_mgr.mark_bad(proxy_id, session=session)
+                spider.logger.warning(
+                    "Proxy %s blocked (status %d), rotating", proxy_id, response.status
+                )
+
+        return response
 
     async def process_request(self, request, spider):
         if not request.url.startswith("http"):

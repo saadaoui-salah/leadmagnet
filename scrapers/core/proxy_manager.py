@@ -73,6 +73,13 @@ class WebshareProvider(ProxyProvider):
 
     BASE_URL = "https://proxy.webshare.io/api/v2"
 
+    # Webshare plan IDs for different proxy types
+    PLAN_IDS = {
+        "datacenter": 13766293,  # your datacenter plan
+        "static_residential": 13768706,  # your static residential plan
+        "residential": None,  # rotating residential
+    }
+
     def __init__(self, api_token: str, plan_id: Optional[int] = None):
         self.api_token = api_token
         self.plan_id = plan_id
@@ -87,13 +94,21 @@ class WebshareProvider(ProxyProvider):
         mode = session_cfg.get("mode", "direct")
         country = session_cfg.get("country", "ZZ")
         page_size = session_cfg.get("page_size", 100)
+        proxy_type = session_cfg.get("proxy_type", "datacenter")
+
+        # Determine plan ID
+        plan_id = self.plan_id
+        if not plan_id:
+            plan_id = session_cfg.get("plan_id")
+        if not plan_id:
+            plan_id = self.PLAN_IDS.get(proxy_type)
 
         all_proxies = []
         page = 1
 
         params = {"mode": mode, "page_size": page_size}
-        if self.plan_id:
-            params["plan_id"] = self.plan_id
+        if plan_id:
+            params["plan_id"] = plan_id
         if country and country.upper() != "ZZ":
             params["country_code__in"] = country.upper()
 
@@ -317,19 +332,19 @@ class ProxyManager:
         "default": {
             "provider": "webshare",
             "strategy": "round-robin",
-            "country": "ZZ",
+            "country": "US",
             "mode": "direct",
         }
     }
     DEFAULT_ROTATION = "round-robin"
-    DEFAULT_LOCATION = "ZZ"
+    DEFAULT_LOCATION = "US"
     DEFAULT_REFRESH_INTERVAL = 300
 
     def __init__(
         self,
         sessions: Optional[dict] = None,
         rotation: str = "round-robin",
-        location: str = "ZZ",
+        location: str = "US",
         refresh_interval: int = 300,
     ):
         self.sessions = sessions or self.DEFAULT_SESSIONS.copy()
@@ -340,8 +355,10 @@ class ProxyManager:
         self._providers: dict[str, ProxyProvider] = {}
         self._proxies: dict[str, list[ProxyEntry]] = {}
         self._iterators: dict[str, cycle] = {}
+        self._sticky_proxy: dict[str, str] = {}  # session -> proxy_id for on-block strategy
         self._lock = threading.Lock()
         self._last_refresh: float = 0
+        self._cached_session_cfg: dict = {}
 
         self.CACHE_DIR.mkdir(parents=True, exist_ok=True)
         self._init_providers()
@@ -360,7 +377,12 @@ class ProxyManager:
                         "Set it in session config or .env"
                     )
                 kwargs["api_token"] = token
-                kwargs["plan_id"] = cfg.get("plan_id")
+                # Plan ID can come from session config or proxy_type
+                plan_id = cfg.get("plan_id")
+                if not plan_id:
+                    proxy_type = cfg.get("proxy_type", "datacenter")
+                    plan_id = WebshareProvider.PLAN_IDS.get(proxy_type)
+                kwargs["plan_id"] = plan_id
             elif provider_name == "oxylabs":
                 # Oxylabs credentials come from session config or settings
                 kwargs["host"] = cfg.get("host") or os.getenv("OXYLABS_HOST", "dc.oxylabs.io")
@@ -378,12 +400,20 @@ class ProxyManager:
         # If no sessions defined, build from top-level settings
         if not sessions:
             provider = settings.get("PROXY_PROVIDER", "webshare")
+            proxy_type = settings.get("PROXY_TYPE", "datacenter")
+
+            # Map proxy_type to Webshare mode
+            mode = settings.get("PROXY_MODE", "direct")
+            if proxy_type == "backbone":
+                mode = "backbone"
+
             sessions = {
                 "default": {
                     "provider": provider,
                     "strategy": settings.get("PROXY_ROTATION", cls.DEFAULT_ROTATION),
                     "country": settings.get("PROXY_LOCATION", cls.DEFAULT_LOCATION),
-                    "mode": settings.get("PROXY_MODE", "direct"),
+                    "mode": mode,
+                    "proxy_type": proxy_type,
                 }
             }
 
@@ -464,6 +494,16 @@ class ProxyManager:
     def refresh(self, force: bool = False):
         """Fetch fresh proxies from provider (respects refresh interval)."""
         now = time.time()
+
+        # Force refresh if country changed
+        for session_name, session_cfg in self.sessions.items():
+            current_country = session_cfg.get("country", "ZZ")
+            cached_cfg = self._cached_session_cfg.get(session_name, {})
+            cached_country = cached_cfg.get("country", "ZZ")
+            if current_country != cached_country:
+                force = True
+                break
+
         if not force and (now - self._last_refresh) < self.refresh_interval:
             return
 
@@ -485,6 +525,7 @@ class ProxyManager:
                         raise RuntimeError(f"Proxy fetch failed ({session_name}): {e}")
 
             self._last_refresh = time.time()
+            self._cached_session_cfg = {k: v.copy() for k, v in self.sessions.items()}
             self._save_cache()
 
     def _build_iterator(self, session_name: str):
@@ -503,6 +544,9 @@ class ProxyManager:
         elif strategy == "least-used":
             sorted_proxies = sorted(proxies, key=lambda p: p.use_count)
             self._iterators[session_name] = cycle(sorted_proxies)
+        elif strategy == "on-block":
+            # Sticky strategy: reuse same proxy until blocked
+            self._sticky_proxy = {}
         else:  # round-robin
             self._iterators[session_name] = cycle(proxies)
 
@@ -516,6 +560,26 @@ class ProxyManager:
             proxies = self._proxies.get(session, [])
             if not proxies:
                 return None
+
+            strategy = self.sessions.get(session, {}).get(
+                "strategy", self.default_rotation
+            )
+
+            # On-block strategy: reuse same proxy until marked bad
+            if strategy == "on-block":
+                if session in self._sticky_proxy:
+                    proxy_id = self._sticky_proxy[session]
+                    for p in proxies:
+                        if p.id == proxy_id:
+                            p.use_count += 1
+                            p.last_used = time.time()
+                            return p
+                # No sticky proxy yet, pick first one
+                proxy = proxies[0]
+                self._sticky_proxy[session] = proxy.id
+                proxy.use_count += 1
+                proxy.last_used = time.time()
+                return proxy
 
             iterator = self._iterators.get(session)
             if iterator is None:
@@ -555,6 +619,11 @@ class ProxyManager:
         with self._lock:
             proxies = self._proxies.get(session, [])
             self._proxies[session] = [p for p in proxies if p.id != proxy_id]
+
+            # Clear sticky proxy if it was the one marked bad
+            if session in self._sticky_proxy and self._sticky_proxy[session] == proxy_id:
+                del self._sticky_proxy[session]
+
             self._build_iterator(session)
 
     # ── Stats ─────────────────────────────────────────────────────────────

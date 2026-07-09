@@ -45,9 +45,6 @@ class ZillowSpider(scrapy.Spider):
 
     custom_settings = {
         "ROBOTSTXT_OBEY": False,
-        "CONCURRENT_REQUESTS_PER_DOMAIN": 1,
-        "CONCURRENT_REQUESTS": 1,
-        "DOWNLOAD_DELAY": 3,
         "RANDOMIZE_DOWNLOAD_DELAY": True,
         "RETRY_TIMES": 15,
         "DOWNLOADER_MIDDLEWARES": {
@@ -57,9 +54,7 @@ class ZillowSpider(scrapy.Spider):
         },
     }
     proxy_provider = "webshare"
-    proxy_session = "default"
-    proxy_rotation = "round-robin"
-    proxy_location = "US"
+    proxy_rotation = "on-block"
     proxy_type = "datacenter"
     LISTING_TYPES = {
         "rent": "rentals/",
@@ -81,7 +76,9 @@ class ZillowSpider(scrapy.Spider):
         path = self.LISTING_TYPES[self.listing_type]
         url = f"https://www.zillow.com/{self.zip_code}/{path}"
         self.logger.info("Fetching %s", url)
-        yield scrapy.Request(url, callback=self.parse, dont_filter=True)
+        yield scrapy.Request(url, 
+                headers={'accept': '*/*'},
+                             callback=self.parse, dont_filter=True)
 
     def parse(self, response):
         match = re.search(
@@ -102,6 +99,10 @@ class ZillowSpider(scrapy.Spider):
             method="PUT",
             body=json.dumps(self._payload(page, payload)),
             callback=self.parse_items,
+            headers={
+                'accept': '*/*',
+                'content-type': 'application/json',
+            },
             cb_kwargs={"page": page, "payload": payload},
             dont_filter=True,
         )
