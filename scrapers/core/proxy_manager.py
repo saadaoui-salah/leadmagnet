@@ -169,7 +169,25 @@ class OxylabsProvider(ProxyProvider):
                 "strategy": "random",
             }
         }
+
+    4. Credentials from settings (.env):
+        OXYLABS_HOST=dc.oxylabs.io
+        OXYLABS_PORT=8000
+        OXYLABS_USERNAME=user-reaalestate_qNES0-country-US
+        OXYLABS_PASSWORD=G9R46D3kqnW=p3
     """
+
+    def __init__(
+        self,
+        host: str = "dc.oxylabs.io",
+        port: int = 8000,
+        username: str = "",
+        password: str = "",
+    ):
+        self.host = host
+        self.port = port
+        self.username = username
+        self.password = password
 
     @staticmethod
     def parse_proxy_url(url: str) -> ProxyEntry:
@@ -215,11 +233,11 @@ class OxylabsProvider(ProxyProvider):
         if "proxy_url" in session_cfg:
             return [self.parse_proxy_url(session_cfg["proxy_url"])]
 
-        # Option 3: Explicit host/user/pass
-        host = session_cfg.get("host", "dc.oxylabs.io")
-        port = session_cfg.get("port", 8000)
-        username = session_cfg.get("username", "")
-        password = session_cfg.get("password", "")
+        # Option 3: Explicit host/user/pass (or use constructor defaults)
+        host = session_cfg.get("host", self.host)
+        port = session_cfg.get("port", self.port)
+        username = session_cfg.get("username", self.username)
+        password = session_cfg.get("password", self.password)
 
         country_code = ""
         if "-country-" in username:
@@ -343,6 +361,12 @@ class ProxyManager:
                     )
                 kwargs["api_token"] = token
                 kwargs["plan_id"] = cfg.get("plan_id")
+            elif provider_name == "oxylabs":
+                # Oxylabs credentials come from session config or settings
+                kwargs["host"] = cfg.get("host") or os.getenv("OXYLABS_HOST", "dc.oxylabs.io")
+                kwargs["port"] = cfg.get("port") or int(os.getenv("OXYLABS_PORT", "8000"))
+                kwargs["username"] = cfg.get("username") or os.getenv("OXYLABS_USERNAME", "")
+                kwargs["password"] = cfg.get("password") or os.getenv("OXYLABS_PASSWORD", "")
 
             self._providers[session_name] = get_provider(provider_name, **kwargs)
 

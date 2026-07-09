@@ -16,16 +16,20 @@ Scrapy-based scrapers for Atlanta real estate data with multi-provider proxy sup
    pip install -r requirements.txt
    ```
 
-2. **Configure proxies** in `.env`:
+2. **Configure credentials** in `.env`:
    ```env
-   # Webshare
+   # Zyte API
+   ZYTE_API_KEY=your_zyte_key
+   ZYTE_PROJECT_ID=your_project_id
+
+   # Webshare Proxy
    WEBSHARE_API_TOKEN=your_token_here
 
-   # Oxylabs
+   # Oxylabs Proxy
    OXYLABS_HOST=dc.oxylabs.io
    OXYLABS_PORT=8000
-   OXYLABS_USER=your_user
-   OXYLABS_PASS=your_pass
+   OXYLABS_USERNAME=your_username
+   OXYLABS_PASSWORD=your_password
    ```
 
 3. **Enable proxies** in `core/settings.py`:

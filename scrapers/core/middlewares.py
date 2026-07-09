@@ -6,7 +6,7 @@ from scrapy.http import TextResponse
 from scrapy import signals
 
 from core.browser_profiles import get_random_profile
-from core.proxy_manager import WebshareProxyManager
+from core.proxy_manager import ProxyManager, WebshareProxyManager
 
 
 class CurlCffiDownloaderMiddleware:
@@ -37,7 +37,7 @@ class CurlCffiDownloaderMiddleware:
         self.timeout = timeout
         self.proxy_enabled = proxy_enabled
         self._last_request_time = 0
-        self._proxy_mgr: WebshareProxyManager | None = None
+        self._proxy_mgr: ProxyManager | None = None
 
     @classmethod
     def from_crawler(cls, crawler):
@@ -51,7 +51,7 @@ class CurlCffiDownloaderMiddleware:
 
         if proxy_enabled:
             try:
-                mw._proxy_mgr = WebshareProxyManager.from_settings(crawler.settings)
+                mw._proxy_mgr = ProxyManager.from_settings(crawler.settings)
                 mw._proxy_mgr.refresh(force=True)
             except ValueError as e:
                 proxy_enabled = False

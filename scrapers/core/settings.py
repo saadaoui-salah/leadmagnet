@@ -7,6 +7,12 @@
 #     https://docs.scrapy.org/en/latest/topics/downloader-middleware.html
 #     https://docs.scrapy.org/en/latest/topics/spider-middleware.html
 
+import os
+from dotenv import load_dotenv
+
+# Load .env file (all credentials come from here)
+load_dotenv()
+
 BOT_NAME = "core"
 
 SPIDER_MODULES = ["core.spiders"]
@@ -50,14 +56,21 @@ DOWNLOADER_MIDDLEWARES = {
     "scrapy.downloadermiddlewares.useragent.UserAgentMiddleware": None,
 }
 
-# ── Proxy Configuration (Webshare) ──────────────────────────────────────
-# Set WEBSHARE_API_TOKEN in .env or here. Get a key at:
-#   https://dashboard.webshare.io/userapi/keys
-#
-# from dotenv import load_dotenv
-# load_dotenv()
-# WEBSHARE_API_TOKEN = os.getenv("WEBSHARE_API_TOKEN", "")
+# ── Credentials (loaded from .env) ───────────────────────────────────────
+# Zyte API
+ZYTE_API_KEY = os.getenv("ZYTE_API_KEY", "")
+ZYTE_PROJECT_ID = os.getenv("ZYTE_PROJECT_ID", "")
 
+# Webshare Proxy
+WEBSHARE_API_TOKEN = os.getenv("WEBSHARE_API_TOKEN", "")
+
+# Oxylabs Proxy
+OXYLABS_HOST = os.getenv("OXYLABS_HOST", "dc.oxylabs.io")
+OXYLABS_PORT = int(os.getenv("OXYLABS_PORT", "8000"))
+OXYLABS_USERNAME = os.getenv("OXYLABS_USERNAME", "")
+OXYLABS_PASSWORD = os.getenv("OXYLABS_PASSWORD", "")
+
+# ── Proxy Configuration ──────────────────────────────────────────────────
 PROXY_ENABLED = False  # Set True to enable proxy rotation
 
 # Proxy provider: "webshare" | "oxylabs" | "static"
