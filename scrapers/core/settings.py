@@ -58,7 +58,9 @@ SPIDER_MIDDLEWARES = {
 
 DOWNLOADER_MIDDLEWARES = {
     "core.middlewares.CurlCffiDownloaderMiddleware": 400,
+    "core.proxy_retry_middleware.ProxyRetryMiddleware": 401,
     "scrapy.downloadermiddlewares.useragent.UserAgentMiddleware": None,
+    "scrapy.downloadermiddlewares.retry.RetryMiddleware": None,  # replaced by our middleware
 }
 
 # ── Credentials (loaded from .env) ───────────────────────────────────────

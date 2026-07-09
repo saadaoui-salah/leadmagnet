@@ -168,18 +168,6 @@ class ProxyCostCalculatorMiddleware:
         per_ip_monthly = pricing.get("per_ip_monthly", 0.0)
         per_gb = pricing.get("per_gb", 0.0)
 
-        # ── Calculate cost ─────────────────────────────────────────────
-        cost = 0.0
-
-        if model == "per_gb":
-            cost = total_gb * per_gb
-        elif model == "per_ip_monthly":
-            # Estimate number of unique proxies used
-            unique_proxies = self.stats.get_value("proxy/unique_proxies", 1)
-            cost = unique_proxies * per_ip_monthly
-        elif model == "per_request":
-            cost = self._total_requests * spider.settings.getfloat("PROXY_COST_PER_REQUEST", 0.001)
-
         # ── Allow custom pricing from settings ─────────────────────────
         custom_per_gb = spider.settings.getfloat("PROXY_COST_RESIDENTIAL_PER_GB", None)
         custom_per_ip = spider.settings.getfloat("PROXY_COST_DATACENTER_PER_IP", None)
@@ -192,10 +180,13 @@ class ProxyCostCalculatorMiddleware:
         if custom_per_ip is not None:
             per_ip_monthly = custom_per_ip
 
-        # Recalculate with custom pricing
+        # ── Calculate cost ─────────────────────────────────────────────
+        cost = 0.0
+
         if model == "per_gb":
             cost = total_gb * per_gb
         elif model == "per_ip_monthly":
+            # Estimate number of unique proxies used
             unique_proxies = self.stats.get_value("proxy/unique_proxies", 1)
             cost = unique_proxies * per_ip_monthly
         elif model == "per_request":
@@ -205,19 +196,19 @@ class ProxyCostCalculatorMiddleware:
         cost_per_request = cost / self._total_requests if self._total_requests > 0 else 0
         cost_per_mb = cost / total_mb if total_mb > 0 else 0
 
-        # ── Set stats ──────────────────────────────────────────────────
+        # ── Set stats (use set_value to ensure they appear in output) ──
         self.stats.set_value("proxy/provider", self._provider)
         self.stats.set_value("proxy/type", self._proxy_type)
         self.stats.set_value("proxy/requests", self._total_requests)
         self.stats.set_value("proxy/bandwidth_bytes", total_bytes)
         self.stats.set_value("proxy/bandwidth_mb", round(total_mb, 2))
         self.stats.set_value("proxy/bandwidth_gb", round(total_gb, 4))
-        self.stats.set_value("proxy/cost_estimate", round(cost, 4))
-        self.stats.set_value("proxy/cost_per_request", round(cost_per_request, 6))
-        self.stats.set_value("proxy/cost_per_mb", round(cost_per_mb, 4))
+        self.stats.set_value("proxy/cost_usd", round(cost, 4))
+        self.stats.set_value("proxy/cost_per_request_usd", round(cost_per_request, 6))
+        self.stats.set_value("proxy/cost_per_mb_usd", round(cost_per_mb, 4))
         self.stats.set_value("proxy/pricing_model", model)
-        self.stats.set_value("proxy/rate_per_gb", per_gb)
-        self.stats.set_value("proxy/rate_per_ip", per_ip_monthly)
+        self.stats.set_value("proxy/rate_per_gb_usd", per_gb)
+        self.stats.set_value("proxy/rate_per_ip_monthly_usd", per_ip_monthly)
 
         # ── Log summary ────────────────────────────────────────────────
         spider.logger.info(

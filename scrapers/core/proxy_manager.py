@@ -615,14 +615,31 @@ class ProxyManager:
         return self._proxies.get(session, [])
 
     def mark_bad(self, proxy_id: str, session: str = "default"):
-        """Mark a proxy as invalid (removed from rotation)."""
+        """Mark a proxy as invalid (removed from rotation).
+        
+        proxy_id can be either:
+        - The proxy ID (e.g. "d-17461981689")
+        - The address:port (e.g. "184.174.56.234:5246")
+        """
         with self._lock:
             proxies = self._proxies.get(session, [])
-            self._proxies[session] = [p for p in proxies if p.id != proxy_id]
+            
+            # Find proxy by ID or by address:port
+            removed_id = None
+            new_proxies = []
+            for p in proxies:
+                if p.id == proxy_id or f"{p.proxy_address}:{p.port}" == proxy_id:
+                    removed_id = p.id
+                    continue
+                new_proxies.append(p)
+            
+            self._proxies[session] = new_proxies
 
             # Clear sticky proxy if it was the one marked bad
-            if session in self._sticky_proxy and self._sticky_proxy[session] == proxy_id:
-                del self._sticky_proxy[session]
+            if session in self._sticky_proxy:
+                sticky_id = self._sticky_proxy[session]
+                if sticky_id == removed_id or sticky_id == proxy_id:
+                    del self._sticky_proxy[session]
 
             self._build_iterator(session)
 

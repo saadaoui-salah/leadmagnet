@@ -109,28 +109,6 @@ class CurlCffiDownloaderMiddleware:
             return self._proxy_mgr.get_random_proxy(session=session)
         return self._proxy_mgr.get_proxy(session=session)
 
-    def process_response(self, request, response, spider):
-        """Check response for blocking indicators and mark proxy as bad if needed."""
-        if not self.proxy_enabled or not self._proxy_mgr:
-            return response
-
-        # Check if response indicates blocking
-        blocked_status = {403, 429, 503}
-        if response.status in blocked_status:
-            proxy = request.meta.get("proxy")
-            if proxy and self._proxy_mgr:
-                session = getattr(spider, "proxy_session", "default")
-                # Extract proxy ID from URL
-                from urllib.parse import urlparse
-                parsed = urlparse(proxy)
-                proxy_id = f"{parsed.hostname}:{parsed.port}"
-                self._proxy_mgr.mark_bad(proxy_id, session=session)
-                spider.logger.warning(
-                    "Proxy %s blocked (status %d), rotating", proxy_id, response.status
-                )
-
-        return response
-
     async def process_request(self, request, spider):
         if not request.url.startswith("http"):
             return None

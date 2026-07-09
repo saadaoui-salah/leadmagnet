@@ -6,8 +6,7 @@ on:
     branches:
       - master
     paths:
-      - 'jobs/run_zyte.py'
-      - 'jobs/zyte_report.py'
+      - 'jobs/**'
       - '.github/workflows/setup-crons.yml'
 
 jobs:
