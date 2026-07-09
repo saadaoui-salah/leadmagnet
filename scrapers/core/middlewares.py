@@ -73,6 +73,10 @@ class CurlCffiDownloaderMiddleware:
 
     def _get_proxy_for_request(self, spider):
         """Resolve which proxy to use based on spider class variables or defaults."""
+        # Spider can disable proxies per-spider
+        spider_provider = getattr(spider, "proxy_provider", None)
+        if spider_provider == "none":
+            return None
         if not self.proxy_enabled or not self._proxy_mgr:
             return None
 

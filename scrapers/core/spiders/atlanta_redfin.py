@@ -31,7 +31,8 @@ class AtlantaRedfinSpider(scrapy.Spider):
     allowed_domains = ["redfin.com"]
 
     # ── Proxy Configuration ─────────────────────────────────────────────
-    proxy_provider = "webshare"
+    # Set proxy_provider = "none" to disable proxies for this spider
+    proxy_provider = "webshare"  # "webshare" | "oxylabs" | "none"
     proxy_session = "default"
     proxy_rotation = "round-robin"
     proxy_location = "US"

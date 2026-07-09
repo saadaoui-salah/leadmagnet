@@ -35,7 +35,8 @@ class AtlantaZillowSpider(scrapy.Spider):
     allowed_domains = ["zillow.com"]
 
     # ── Proxy Configuration ─────────────────────────────────────────────
-    proxy_provider = "webshare"
+    # Set proxy_provider = "none" to disable proxies for this spider
+    proxy_provider = "webshare"  # "webshare" | "oxylabs" | "none"
     proxy_session = "default"
     proxy_rotation = "round-robin"
     proxy_location = "US"

@@ -71,7 +71,9 @@ OXYLABS_USERNAME = os.getenv("OXYLABS_USERNAME", "")
 OXYLABS_PASSWORD = os.getenv("OXYLABS_PASSWORD", "")
 
 # ── Proxy Configuration ──────────────────────────────────────────────────
-PROXY_ENABLED = False  # Set True to enable proxy rotation
+# Auto-enable if provider is set (override with PROXY_ENABLED=False to disable)
+PROXY_PROVIDER = os.getenv("PROXY_PROVIDER", "")  # "webshare" | "oxylabs" | ""
+PROXY_ENABLED = bool(PROXY_PROVIDER.strip())
 
 # Proxy provider: "webshare" | "oxylabs" | "static"
 PROXY_PROVIDER = "webshare"

@@ -24,8 +24,9 @@ class ProxyExampleSpider(scrapy.Spider):
 
     # ── Class-level proxy config (optional) ────────────────────────────
     # These override settings.py defaults per-spider.
-    # Uncomment and customize as needed:
+    # Set proxy_provider = "none" to disable proxies for this spider.
 
+    # proxy_provider = "webshare"    # "webshare" | "oxylabs" | "none"
     # proxy_session = "default"      # which named session pool to use
     # proxy_rotation = "round-robin" # round-robin | random | least-used
     # proxy_location = "US"          # override country filter

@@ -128,15 +128,26 @@ def test_spiders():
 
         spider = AtlantaZillowSpider()
         print(f"✓ AtlantaZillowSpider")
-        print(f"  - provider: {spider.proxy_provider}")
-        print(f"  - session: {spider.proxy_session}")
-        print(f"  - rotation: {spider.proxy_rotation}")
-        print(f"  - location: {spider.proxy_location}")
-        print(f"  - type: {spider.proxy_type}")
+        print(f"  - proxy_provider: {spider.proxy_provider}")
+        print(f"  - proxy_session: {spider.proxy_session}")
+        print(f"  - proxy_rotation: {spider.proxy_rotation}")
+        print(f"  - proxy_location: {spider.proxy_location}")
+        print(f"  - proxy_type: {spider.proxy_type}")
         print(f"  - zips: {len(spider.zips)} zip codes")
 
     except Exception as e:
         print(f"✗ Error testing AtlantaZillowSpider: {e}")
+
+    # Test spider with proxy disabled
+    try:
+        from core.spiders.proxy_example import ProxyExampleSpider
+
+        spider = ProxyExampleSpider()
+        print(f"\n✓ ProxyExampleSpider")
+        print(f"  - proxy_provider: {spider.proxy_provider if hasattr(spider, 'proxy_provider') else 'not set (uses settings)'}")
+
+    except Exception as e:
+        print(f"✗ Error testing ProxyExampleSpider: {e}")
 
 
 def main():
