@@ -7,7 +7,8 @@ on:
       - master
     paths:
       - 'jobs/run_zyte.py'
-      - '.github/workflows/setup-zyte-cron.yml'
+      - 'jobs/zyte_report.py'
+      - '.github/workflows/setup-crons.yml'
 
 jobs:
   setup-cron:
@@ -28,23 +29,24 @@ jobs:
             echo "Authenticating git.."
             eval "$(ssh-agent -s)" && ssh-add ~/.ssh/git && ssh -T git@github.com
 
-            cd ~/jobs/leadmagnet/
+            cd ~/leadmagnet/jobs/
 
             echo "Pulling latest..."
             git pull
 
             echo "Installing deps..."
-            source venv/bin/activate || python3 -m venv ~/jobs/leadmagnet/venv && source venv/bin/activate && pip install python-dotenv
+            source venv/bin/activate || python3 -m venv ~/leadmagnet/jobs/venv && source venv/bin/activate && pip install python-dotenv
             pip install -r requirements.txt
 
             echo "Setting up cron jobs..."
-            SEARCH_CRON="0 2 * * * cd ~/jobs/leadmagnet && . venv/bin/activate && python run_zyte.py --listing-types rent sold sale >> /var/log/zyte-cron.log 2>&1"
-            DETAIL_CRON="30 2 * * * cd ~/jobs/leadmagnet && . venv/bin/activate && python run_zyte.py --spider detail >> /var/log/zyte-detail-cron.log 2>&1"
+            SEARCH_CRON="0 2 * * * cd ~/leadmagnet/jobs && . venv/bin/activate && python run_zyte.py --listing-types rent sold sale >> /var/log/zyte-cron.log 2>&1"
+            DETAIL_CRON="30 2 * * * cd ~/leadmagnet/jobs && . venv/bin/activate && python run_zyte.py --spider detail >> /var/log/zyte-detail-cron.log 2>&1"
+            REPORT_CRON="0 9 * * * cd ~/leadmagnet/jobs && . venv/bin/activate && python jobs/zyte_report.py >> /var/log/zyte-report.log 2>&1"
 
             # Remove old entries, add new
-            (crontab -l 2>/dev/null | grep -v "run_zyte.py"; echo "$SEARCH_CRON"; echo "$DETAIL_CRON") | crontab -
+            (crontab -l 2>/dev/null | grep -v "run_zyte.py" | grep -v "zyte_report.py"; echo "$SEARCH_CRON"; echo "$DETAIL_CRON"; echo "$REPORT_CRON") | crontab -
 
             echo "Cron jobs installed:"
-            crontab -l | grep run_zyte
+            crontab -l | grep -E "run_zyte|zyte_report"
 
             echo "Done!"

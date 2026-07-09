@@ -17,12 +17,13 @@ import sys
 import time
 import base64
 from urllib.request import Request, urlopen
-from urllib.error import URLError, HTTPError
+from zyte_report import load_accounts
 from urllib.parse import urlencode
 from dotenv import load_dotenv
 
 load_dotenv()
 
+ACCOUNTS = load_accounts()
 # ──────────────────────────────────────────────────────────
 # CONFIG - Zillow Search Spider (Account 1)
 # ──────────────────────────────────────────────────────────
@@ -56,7 +57,7 @@ def zyte_auth_header(api_key):
 def zyte_request(url, method="GET", data=None, api_key=None):
     """Make authenticated request to Zyte API."""
     if api_key is None:
-        api_key = ZYTE_API_KEY
+        api_key = ACCOUNTS[0]["api_key"]  
     headers = {"Authorization": zyte_auth_header(api_key)}
     if data and method == "POST":
         headers["Content-Type"] = "application/x-www-form-urlencoded"
@@ -96,9 +97,9 @@ def fetch_zipcodes():
 def get_active_jobs(api_key=None, project_id=None):
     """Get all pending and running jobs."""
     if api_key is None:
-        api_key = ZYTE_API_KEY
+        api_key = ACCOUNTS[0]["api_key"]
     if project_id is None:
-        project_id = ZYTE_PROJECT_ID
+        project_id = ACCOUNTS[0]["project_id"]
 
     active = {}
     for state in ["pending", "running"]:
@@ -139,7 +140,7 @@ def run_search_spider(zipcode, listing_type):
     tag = f"zillow-{listing_type}-{zipcode}"
 
     payload = {
-        "project": ZYTE_PROJECT_ID,
+        "project": ACCOUNTS[0]["project_id"],
         "spider": "zillow",
         "units": 1,
         "add_tag": tag,
@@ -169,7 +170,7 @@ def run_detail_spider(batch_offset):
     tag = f"detail-batch-{batch_offset}"
 
     payload = {
-        "project": ZYTE_DETAIL_PROJECT_ID,
+        "project": ACCOUNTS[1]["project_id"],
         "spider": "zillow_detail",
         "units": 1,
         "add_tag": tag,
@@ -178,7 +179,7 @@ def run_detail_spider(batch_offset):
     }
 
     try:
-        result = zyte_request(ZYTE_RUN_URL, method="POST", data=payload, api_key=ZYTE_DETAIL_API_KEY)
+        result = zyte_request(ZYTE_RUN_URL, method="POST", data=payload, api_key=ACCOUNTS[1]["api_key"])
         if result.get("status") == "ok":
             job_id = result.get("jobid", "unknown")
             print(f"  ✓ Scheduled: {job_id} detail batch offset={batch_offset}")
