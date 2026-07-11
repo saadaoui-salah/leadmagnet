@@ -386,7 +386,8 @@ class ProxyManager:
             elif provider_name == "oxylabs":
                 # Oxylabs credentials come from session config or settings
                 kwargs["host"] = cfg.get("host") or os.getenv("OXYLABS_HOST", "dc.oxylabs.io")
-                kwargs["port"] = cfg.get("port") or int(os.getenv("OXYLABS_PORT", "8000"))
+                port = cfg.get("port") or os.getenv("OXYLABS_PORT", "8000")
+                kwargs["port"] = int(port) if port else 8000
                 kwargs["username"] = cfg.get("username") or os.getenv("OXYLABS_USERNAME", "")
                 kwargs["password"] = cfg.get("password") or os.getenv("OXYLABS_PASSWORD", "")
 
@@ -425,9 +426,10 @@ class ProxyManager:
                     sessions["default"]["plan_id"] = plan_id
             elif provider == "oxylabs":
                 sessions["default"]["host"] = settings.get("OXYLABS_HOST", "dc.oxylabs.io")
-                sessions["default"]["port"] = settings.getint("OXYLABS_PORT", 8000)
-                sessions["default"]["username"] = settings.get("OXYLABS_USERNAME", "")
-                sessions["default"]["password"] = settings.get("OXYLABS_PASSWORD", "")
+                port = settings.get("OXYLABS_PORT", "") or os.getenv("OXYLABS_PORT", "8000")
+                sessions["default"]["port"] = int(port) if port else 8000
+                sessions["default"]["username"] = settings.get("OXYLABS_USERNAME", "") or os.getenv("OXYLABS_USERNAME", "")
+                sessions["default"]["password"] = settings.get("OXYLABS_PASSWORD", "") or os.getenv("OXYLABS_PASSWORD", "")
 
         rotation = settings.get("PROXY_ROTATION", cls.DEFAULT_ROTATION)
         location = settings.get("PROXY_LOCATION", cls.DEFAULT_LOCATION)
@@ -492,9 +494,10 @@ class ProxyManager:
                 sessions[session]["plan_id"] = plan_id
         elif provider == "oxylabs":
             sessions[session]["host"] = custom_settings.get("OXYLABS_HOST") or settings.get("OXYLABS_HOST", "dc.oxylabs.io")
-            sessions[session]["port"] = custom_settings.get("OXYLABS_PORT") or settings.getint("OXYLABS_PORT", 8000)
-            sessions[session]["username"] = custom_settings.get("OXYLABS_USERNAME") or settings.get("OXYLABS_USERNAME", "")
-            sessions[session]["password"] = custom_settings.get("OXYLABS_PASSWORD") or settings.get("OXYLABS_PASSWORD", "")
+            port = custom_settings.get("OXYLABS_PORT") or settings.get("OXYLABS_PORT", "") or os.getenv("OXYLABS_PORT", "8000")
+            sessions[session]["port"] = int(port) if port else 8000
+            sessions[session]["username"] = custom_settings.get("OXYLABS_USERNAME") or settings.get("OXYLABS_USERNAME", "") or os.getenv("OXYLABS_USERNAME", "")
+            sessions[session]["password"] = custom_settings.get("OXYLABS_PASSWORD") or settings.get("OXYLABS_PASSWORD", "") or os.getenv("OXYLABS_PASSWORD", "")
 
         refresh_interval = settings.getint("PROXY_REFRESH_INTERVAL", cls.DEFAULT_REFRESH_INTERVAL)
 
