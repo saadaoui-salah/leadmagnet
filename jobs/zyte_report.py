@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Zyte Scrapy Cloud job report → Telegram.
-Shows job stats, daily cost, and daily bandwidth per account.
+Daily scraping report → Telegram.
+Zyte job stats + Webshare proxy stats (bandwidth, cost, requests, errors).
 
 Usage:
     python zyte_report.py              # Report for all accounts
@@ -11,6 +11,7 @@ Usage:
 
 Env vars:
     ZYTE_ACCOUNTS='[{"name":"Acc1","api_key":"xxx","project_id":"123"}]'
+    WEBSHARE_API_TOKEN='your-token'
     TELEGRAM_BOT_TOKEN='123:ABC'
     TELEGRAM_CHAT_ID='-100123'
 """
@@ -23,13 +24,18 @@ import argparse
 from datetime import datetime, timedelta, timezone
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
+from urllib.parse import urlencode
 from dotenv import load_dotenv
 
 # Load .env from jobs directory
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
+# ── API URLs ──────────────────────────────────────────────────────────────
 ZYTE_JOBS_URL = "https://app.zyte.com/api/jobs/list.json"
-ZYTE_STATS_URL = "https://app.zyte.com/api/jobs/{job_id}/stats.json"
+WEBSHARE_BASE = "https://proxy.webshare.io/api/v2"
+WEBSHARE_STATS_URL = f"{WEBSHARE_BASE}/stats/"
+WEBSHARE_AGGREGATE_URL = f"{WEBSHARE_BASE}/stats/aggregate/"
+WEBSHARE_PLAN_URL = f"{WEBSHARE_BASE}/subscription/plan/"
 
 # Zyte pricing (per GB)
 ZYTE_PRICING = {
@@ -40,12 +46,12 @@ ZYTE_PRICING = {
 }
 
 
+# ── Load Config ───────────────────────────────────────────────────────────
 def load_accounts():
     raw = os.environ.get("ZYTE_ACCOUNTS", "")
     if raw:
         try:
             accounts = json.loads(raw)
-            # Add name if missing
             for i, acc in enumerate(accounts):
                 if "name" not in acc:
                     acc["name"] = f"Account {i + 1}"
@@ -62,6 +68,11 @@ def load_accounts():
     ]
 
 
+def get_webshare_token():
+    return os.environ.get("WEBSHARE_API_TOKEN", "")
+
+
+# ── HTTP Helpers ──────────────────────────────────────────────────────────
 def zyte_request(url, api_key):
     auth = base64.b64encode(f"{api_key}:".encode()).decode()
     req = Request(url, headers={"Authorization": f"Basic {auth}"})
@@ -69,7 +80,14 @@ def zyte_request(url, api_key):
         return json.loads(resp.read())
 
 
-def fetch_jobs(api_key, project_id, state=None):
+def webshare_request(url, token):
+    req = Request(url, headers={"Authorization": f"Token {token}"})
+    with urlopen(req, timeout=30) as resp:
+        return json.loads(resp.read())
+
+
+# ── Zyte API ──────────────────────────────────────────────────────────────
+def fetch_zyte_jobs(api_key, project_id, state=None):
     all_jobs = []
     for s in (state or ["finished", "running", "pending"]):
         offset = 0
@@ -92,22 +110,6 @@ def fetch_jobs(api_key, project_id, state=None):
     return all_jobs
 
 
-def fetch_job_stats(api_key, project_id, job_id):
-    """Fetch stats for a single job.
-    
-    Zyte API returns stats in the job data itself:
-    - items_scraped: number of items scraped
-    - responses_received: number of responses received
-    - elapsed: duration in milliseconds
-    - errors_count: number of errors
-    
-    Bandwidth is estimated based on responses_received.
-    """
-    # The stats are already in the job data from fetch_jobs
-    # This function is for additional stats if needed
-    return None
-
-
 def classify_job(job):
     tags = job.get("tags", [])
     spider = job.get("spider", "")
@@ -126,60 +128,38 @@ def classify_job(job):
     return "unknown"
 
 
-def estimate_bandwidth(responses_received):
-    """Estimate bandwidth based on responses received.
-    
-    Average web page response is ~100KB-500KB.
-    Using 200KB as average for real estate sites.
-    """
-    avg_response_size = 200 * 1024  # 200KB
-    return responses_received * avg_response_size
-
-
-def calculate_cost_from_job(job):
-    """Calculate cost from job data."""
-    responses = job.get("responses_received", 0) or 0
-    
-    # Estimate bandwidth
-    bandwidth_bytes = estimate_bandwidth(responses)
-    bandwidth_gb = bandwidth_bytes / (1024 ** 3)
-    
-    # Calculate cost (proxy only for now)
-    cost = bandwidth_gb * ZYTE_PRICING["proxy"]
-    
-    return cost, bandwidth_bytes
-
-
-def report_account(account, days=None):
-    name = account["name"]
-    api_key = account["api_key"]
-    project_id = account["project_id"]
-
-    if not api_key or not project_id:
-        return None
-
-    jobs = fetch_jobs(api_key, project_id)
-
-    if days:
-        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-        jobs = [
-            j for j in jobs
-            if j.get("started_time") and datetime.fromisoformat(j["started_time"].replace("Z", "+00:00")).replace(tzinfo=None) > cutoff.replace(tzinfo=None)
-        ]
-
+def aggregate_zyte_stats(jobs, days=None):
+    """Aggregate Zyte job stats."""
     by_type = {"rent": 0, "sold": 0, "sale": 0, "detail": 0, "unknown": 0}
     by_state = {}
-    daily_stats = {}  # date -> {bandwidth, cost, jobs}
+    by_spider = {}
+    daily_stats = {}
 
-    total_bandwidth = 0
-    total_cost = 0.0
     total_items = 0
+    total_responses = 0
+    total_errors = 0
+    total_elapsed_ms = 0
+
+    error_jobs = []
 
     for job in jobs:
+        # Filter by days
+        if days:
+            started = job.get("started_time", "")
+            if started:
+                job_dt = datetime.fromisoformat(started.replace("Z", "+00:00")).replace(tzinfo=None)
+                cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+                if job_dt < cutoff.replace(tzinfo=None):
+                    continue
+
         job_type = classify_job(job)
         by_type[job_type] = by_type.get(job_type, 0) + 1
+
         state = job.get("state", "unknown")
         by_state[state] = by_state.get(state, 0) + 1
+
+        spider = job.get("spider", "unknown")
+        by_spider[spider] = by_spider.get(spider, 0) + 1
 
         # Get job date
         started = job.get("started_time", "")
@@ -188,39 +168,195 @@ def report_account(account, days=None):
         else:
             job_date = "unknown"
 
-        # Calculate cost and bandwidth for finished jobs
-        if state == "finished":
-            job_cost, job_bytes = calculate_cost_from_job(job)
-            job_items = job.get("items_scraped", 0) or 0
+        # Accumulate stats
+        items = job.get("items_scraped", 0) or 0
+        responses = job.get("responses_received", 0) or 0
+        errors = job.get("errors_count", 0) or 0
+        elapsed = job.get("elapsed", 0) or 0
 
-            total_bandwidth += job_bytes
-            total_cost += job_cost
-            total_items += job_items
+        total_items += items
+        total_responses += responses
+        total_errors += errors
+        total_elapsed_ms += elapsed
 
-            # Aggregate by day
-            if job_date not in daily_stats:
-                daily_stats[job_date] = {"bandwidth": 0, "cost": 0.0, "jobs": 0, "items": 0}
-            daily_stats[job_date]["bandwidth"] += job_bytes
-            daily_stats[job_date]["cost"] += job_cost
-            daily_stats[job_date]["jobs"] += 1
-            daily_stats[job_date]["items"] += job_items
+        # Track error jobs
+        if errors > 0 or state == "failed":
+            error_jobs.append({
+                "spider": spider,
+                "state": state,
+                "errors": errors,
+                "items": items,
+                "started": started,
+            })
+
+        # Aggregate by day
+        if job_date not in daily_stats:
+            daily_stats[job_date] = {
+                "jobs": 0, "items": 0, "responses": 0, "errors": 0, "elapsed_ms": 0,
+            }
+        daily_stats[job_date]["jobs"] += 1
+        daily_stats[job_date]["items"] += items
+        daily_stats[job_date]["responses"] += responses
+        daily_stats[job_date]["errors"] += errors
+        daily_stats[job_date]["elapsed_ms"] += elapsed
 
     return {
-        "name": name,
-        "project_id": project_id,
         "total_jobs": len(jobs),
         "by_type": by_type,
         "by_state": by_state,
-        "total_bandwidth_bytes": total_bandwidth,
-        "total_bandwidth_gb": round(total_bandwidth / (1024 ** 3), 4),
-        "total_cost": round(total_cost, 4),
+        "by_spider": by_spider,
         "total_items": total_items,
+        "total_responses": total_responses,
+        "total_errors": total_errors,
+        "total_elapsed_ms": total_elapsed_ms,
+        "error_jobs": error_jobs[:10],  # top 10 error jobs
         "daily": daily_stats,
     }
 
 
+# ── Webshare API ──────────────────────────────────────────────────────────
+def fetch_webshare_plans(token):
+    """Fetch all plans (active + cancelled) to get pricing info."""
+    try:
+        result = webshare_request(WEBSHARE_PLAN_URL, token)
+        return result.get("results", [])
+    except Exception as e:
+        print(f"  Error fetching Webshare plans: {e}")
+        return []
+
+
+def fetch_webshare_stats(token, timestamp_gte, timestamp_lte, plan_id=None):
+    """Fetch hourly stats from Webshare."""
+    params = {
+        "timestamp__gte": timestamp_gte,
+        "timestamp__lte": timestamp_lte,
+    }
+    if plan_id:
+        params["plan_id"] = plan_id
+
+    url = f"{WEBSHARE_STATS_URL}?{urlencode(params)}"
+    try:
+        return webshare_request(url, token)
+    except Exception as e:
+        print(f"  Error fetching Webshare stats: {e}")
+        return []
+
+
+def fetch_webshare_aggregate(token, timestamp_gte, timestamp_lte, plan_id=None):
+    """Fetch aggregate stats from Webshare."""
+    params = {
+        "timestamp__gte": timestamp_gte,
+        "timestamp__lte": timestamp_lte,
+    }
+    if plan_id:
+        params["plan_id"] = plan_id
+
+    url = f"{WEBSHARE_AGGREGATE_URL}?{urlencode(params)}"
+    try:
+        return webshare_request(url, token)
+    except Exception as e:
+        print(f"  Error fetching Webshare aggregate: {e}")
+        return {}
+
+
+def aggregate_webshare_stats(token, days=1):
+    """Fetch and aggregate Webshare proxy stats."""
+    now = datetime.now(timezone.utc)
+    gte = (now - timedelta(days=days)).isoformat()
+    lte = now.isoformat()
+
+    # Fetch plans
+    plans = fetch_webshare_plans(token)
+    active_plans = [p for p in plans if p.get("status") == "active"]
+
+    plan_info = {}
+    for plan in active_plans:
+        plan_info[plan["id"]] = {
+            "monthly_price": plan.get("monthly_price", 0),
+            "bandwidth_limit": plan.get("bandwidth_limit", 0),
+            "proxy_type": plan.get("proxy_type", "unknown"),
+            "proxy_subtype": plan.get("proxy_subtype", "unknown"),
+            "proxy_count": plan.get("proxy_count", 0),
+        }
+
+    # Fetch hourly stats (for daily breakdown)
+    hourly_stats = fetch_webshare_stats(token, gte, lte)
+
+    # Fetch aggregate stats
+    aggregate = fetch_webshare_aggregate(token, gte, lte)
+
+    # Calculate cost from plan pricing
+    # Webshare charges per proxy per month, not per GB
+    total_monthly_cost = sum(p.get("monthly_price", 0) for p in active_plans)
+    # Prorate to days
+    daily_cost = total_monthly_cost / 30.0 if total_monthly_cost > 0 else 0
+    period_cost = daily_cost * days
+
+    # Build daily breakdown from hourly stats
+    daily_breakdown = {}
+    for stat in hourly_stats:
+        ts = stat.get("timestamp", "")
+        if ts:
+            try:
+                dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                day = dt.strftime("%Y-%m-%d")
+            except (ValueError, TypeError):
+                continue
+        else:
+            continue
+
+        if day not in daily_breakdown:
+            daily_breakdown[day] = {
+                "bandwidth_bytes": 0,
+                "requests": 0,
+                "requests_successful": 0,
+                "requests_failed": 0,
+                "error_reasons": [],
+                "proxies_used": 0,
+            }
+
+        d = daily_breakdown[day]
+        d["bandwidth_bytes"] += stat.get("bandwidth_total", 0)
+        d["requests"] += stat.get("requests_total", 0)
+        d["requests_successful"] += stat.get("requests_successful", 0)
+        d["requests_failed"] += stat.get("requests_failed", 0)
+        d["proxies_used"] = max(d["proxies_used"], stat.get("number_of_proxies_used", 0))
+
+        # Collect error reasons
+        for err in stat.get("error_reasons", []):
+            d["error_reasons"].append(err)
+
+    # Merge error reasons per day
+    for day, d in daily_breakdown.items():
+        merged = {}
+        for err in d["error_reasons"]:
+            reason = err.get("reason", "unknown")
+            merged[reason] = merged.get(reason, 0) + err.get("count", 0)
+        d["error_reasons"] = [{"reason": k, "count": v} for k, v in merged.items()]
+
+    return {
+        "plans": plan_info,
+        "aggregate": {
+            "bandwidth_bytes": aggregate.get("bandwidth_total", 0),
+            "bandwidth_projected": aggregate.get("bandwidth_projected", 0),
+            "requests": aggregate.get("requests_total", 0),
+            "requests_successful": aggregate.get("requests_successful", 0),
+            "requests_failed": aggregate.get("requests_failed", 0),
+            "error_reasons": aggregate.get("error_reasons", []),
+            "proxies_used": aggregate.get("number_of_proxies_used", 0),
+            "protocols_used": aggregate.get("protocols_used", {}),
+        },
+        "cost": {
+            "monthly": total_monthly_cost,
+            "daily": round(daily_cost, 4),
+            "period": round(period_cost, 4),
+        },
+        "daily": daily_breakdown,
+    }
+
+
+# ── Format Report ─────────────────────────────────────────────────────────
 def format_size(bytes_val):
-    """Format bytes to human readable."""
     if bytes_val < 1024:
         return f"{bytes_val} B"
     elif bytes_val < 1024 ** 2:
@@ -231,49 +367,112 @@ def format_size(bytes_val):
         return f"{bytes_val / (1024 ** 3):.4f} GB"
 
 
-def format_telegram_report(results, days=None):
-    """Format report for Telegram."""
+def format_duration(ms):
+    if ms < 1000:
+        return f"{ms}ms"
+    elif ms < 60000:
+        return f"{ms / 1000:.1f}s"
+    else:
+        return f"{ms / 60000:.1f}min"
+
+
+def format_telegram_report(zyte_stats, webshare_stats, days=None):
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
-    lines = [f"📊 *Zyte Report* — {now}"]
+    lines = [f"📊 *Daily Report* — {now}"]
 
     if days:
         lines[0] += f" _(last {days} days)_"
 
-    total_jobs = 0
-    total_bandwidth = 0
-    total_cost = 0.0
-    total_items = 0
+    # ── Zyte Section ──────────────────────────────────────────────────
+    lines.append("\n━━━ *Zyte Jobs* ━━━")
+    lines.append(f"Jobs: {zyte_stats['total_jobs']}")
+    lines.append(f"Items scraped: {zyte_stats['total_items']:,}")
+    lines.append(f"Responses: {zyte_stats['total_responses']:,}")
+    lines.append(f"Errors: {zyte_stats['total_errors']:,}")
+    lines.append(f"Runtime: {format_duration(zyte_stats['total_elapsed_ms'])}")
 
-    for r in results:
-        total_jobs += r["total_jobs"]
-        total_bandwidth += r["total_bandwidth_bytes"]
-        total_cost += r["total_cost"]
-        total_items += r["total_items"]
+    # By spider
+    if zyte_stats["by_spider"]:
+        lines.append("\n_By spider:_")
+        for spider, count in sorted(zyte_stats["by_spider"].items(), key=lambda x: -x[1]):
+            lines.append(f"  {spider}: {count}")
 
-        lines.append(f"\n*{r['name']}* (Project: {r['project_id']})")
-        lines.append(f"Jobs: {r['total_jobs']}")
-        lines.append(f"Bandwidth: {format_size(r['total_bandwidth_bytes'])} ({r['total_bandwidth_gb']} GB)")
-        lines.append(f"Cost: ${r['total_cost']:.4f}")
-        lines.append(f"Items: {r['total_items']:,}")
+    # By type
+    active_types = {k: v for k, v in zyte_stats["by_type"].items() if v > 0}
+    if active_types:
+        lines.append("\n_By type:_")
+        for jtype, count in sorted(active_types.items(), key=lambda x: -x[1]):
+            lines.append(f"  {jtype}: {count}")
 
-        # Daily breakdown
-        if r["daily"]:
-            lines.append("\n_Daily Breakdown:_")
-            for date in sorted(r["daily"].keys(), reverse=True)[:5]:
-                d = r["daily"][date]
-                lines.append(f"  {date}: {d['jobs']} jobs, {format_size(d['bandwidth'])}, ${d['cost']:.4f}")
+    # By state
+    if zyte_stats["by_state"]:
+        lines.append("\n_By state:_")
+        for state, count in sorted(zyte_stats["by_state"].items(), key=lambda x: -x[1]):
+            lines.append(f"  {state}: {count}")
 
-    lines.append(f"\n*Total:*")
-    lines.append(f"  Jobs: {total_jobs}")
-    lines.append(f"  Bandwidth: {format_size(total_bandwidth)} ({total_bandwidth / (1024 ** 3):.4f} GB)")
-    lines.append(f"  Cost: ${total_cost:.4f}")
-    lines.append(f"  Items: {total_items:,}")
+    # Error jobs
+    if zyte_stats["error_jobs"]:
+        lines.append(f"\n⚠️ *Error jobs:* {len(zyte_stats['error_jobs'])}")
+        for ej in zyte_stats["error_jobs"][:5]:
+            lines.append(f"  {ej['spider']} — {ej['errors']} errors ({ej['state']})")
+
+    # ── Webshare Section ──────────────────────────────────────────────
+    lines.append("\n━━━ *Webshare Proxy* ━━━")
+
+    # Plans
+    if webshare_stats["plans"]:
+        for pid, pinfo in webshare_stats["plans"].items():
+            lines.append(f"Plan: {pinfo['proxy_type']}/{pinfo['proxy_subtype']} ({pinfo['proxy_count']} proxies)")
+            lines.append(f"  Monthly: ${pinfo['monthly_price']:.2f}")
+            if pinfo["bandwidth_limit"] > 0:
+                lines.append(f"  Bandwidth limit: {pinfo['bandwidth_limit']:.1f} GB")
+
+    # Aggregate stats
+    agg = webshare_stats["aggregate"]
+    lines.append(f"\nBandwidth: {format_size(agg['bandwidth_bytes'])} ({agg['bandwidth_bytes'] / (1024**3):.4f} GB)")
+    if agg["bandwidth_projected"] > 0:
+        lines.append(f"Projected: {format_size(agg['bandwidth_projected'])} ({agg['bandwidth_projected'] / (1024**3):.4f} GB)")
+    lines.append(f"Requests: {agg['requests']:,}")
+    lines.append(f"  Successful: {agg['requests_successful']:,}")
+    lines.append(f"  Failed: {agg['requests_failed']:,}")
+    lines.append(f"Proxies used: {agg['proxies_used']}")
+
+    if agg["protocols_used"]:
+        lines.append(f"Protocols: {agg['protocols_used']}")
+
+    # Cost
+    cost = webshare_stats["cost"]
+    lines.append(f"\nCost: ${cost['period']:.2f} ({days or 1}d)")
+    lines.append(f"  Monthly: ${cost['monthly']:.2f}")
+    lines.append(f"  Daily: ${cost['daily']:.4f}")
+
+    # Webshare errors
+    if agg["error_reasons"]:
+        lines.append(f"\n⚠️ *Proxy errors:*")
+        for err in agg["error_reasons"][:5]:
+            lines.append(f"  {err['reason']}: {err['count']}")
+
+    # ── Daily Breakdown (merged) ──────────────────────────────────────
+    all_dates = set(list(zyte_stats["daily"].keys()) + list(webshare_stats["daily"].keys()))
+    if all_dates:
+        lines.append("\n━━━ *Daily Breakdown* ━━━")
+        for date in sorted(all_dates, reverse=True)[:7]:
+            z = zyte_stats["daily"].get(date, {})
+            w = webshare_stats["daily"].get(date, {})
+            bw = w.get("bandwidth_bytes", 0)
+            lines.append(
+                f"*{date}*: "
+                f"{z.get('jobs', 0)} jobs, "
+                f"{z.get('items', 0)} items, "
+                f"{format_size(bw)}, "
+                f"{z.get('errors', 0) + w.get('requests_failed', 0)} errors"
+            )
 
     return "\n".join(lines)
 
 
+# ── Telegram ──────────────────────────────────────────────────────────────
 def send_telegram(text, bot_token=None, chat_id=None):
-    """Send message to Telegram."""
     bot_token = bot_token or os.environ.get("TELEGRAM_BOT_TOKEN", "")
     chat_id = chat_id or os.environ.get("TELEGRAM_CHAT_ID", "")
 
@@ -303,75 +502,113 @@ def send_telegram(text, bot_token=None, chat_id=None):
         return False
 
 
+# ── Main ──────────────────────────────────────────────────────────────────
 def main():
-    parser = argparse.ArgumentParser(description="Zyte report → Telegram")
-    parser.add_argument("--days", type=int, help="Filter to last N days")
+    parser = argparse.ArgumentParser(description="Daily scraping report → Telegram")
+    parser.add_argument("--days", type=int, default=1, help="Report period in days (default: 1)")
     parser.add_argument("--json", action="store_true", help="Output as JSON")
     parser.add_argument("--dry-run", action="store_true", help="Don't send to Telegram")
     parser.add_argument("--telegram-token", help="Override Telegram bot token")
     parser.add_argument("--telegram-chat", help="Override Telegram chat ID")
     args = parser.parse_args()
 
+    webshare_token = get_webshare_token()
     accounts = load_accounts()
-    if not accounts:
-        print("No accounts configured in ZYTE_ACCOUNTS")
+
+    if not accounts and not webshare_token:
+        print("No accounts configured (ZYTE_ACCOUNTS or WEBSHARE_API_TOKEN)")
         sys.exit(1)
 
-    results = []
+    # ── Fetch Zyte stats ──────────────────────────────────────────────
+    all_jobs = []
     for account in accounts:
-        result = report_account(account, days=args.days)
-        if result:
-            results.append(result)
+        api_key = account.get("api_key", "")
+        project_id = account.get("project_id", "")
+        if api_key and project_id:
+            print(f"Fetching Zyte jobs for {account['name']}...")
+            jobs = fetch_zyte_jobs(api_key, project_id)
+            all_jobs.extend(jobs)
 
+    zyte_stats = aggregate_zyte_stats(all_jobs, days=args.days)
+
+    # ── Fetch Webshare stats ──────────────────────────────────────────
+    webshare_stats = {"plans": {}, "aggregate": {}, "cost": {}, "daily": {}}
+    if webshare_token:
+        print("Fetching Webshare proxy stats...")
+        webshare_stats = aggregate_webshare_stats(webshare_token, days=args.days)
+
+    # ── Output ────────────────────────────────────────────────────────
     if args.json:
-        print(json.dumps(results, indent=2))
+        output = {
+            "zyte": zyte_stats,
+            "webshare": webshare_stats,
+        }
+        print(json.dumps(output, indent=2, default=str))
     else:
-        # Print to console
+        # Console output
         print(f"\n{'='*60}")
-        print(f"  ZYTE REPORT")
+        print(f"  DAILY SCRAPING REPORT")
         print(f"{'='*60}")
 
-        total_jobs = 0
-        total_bandwidth = 0
-        total_cost = 0.0
-        total_items = 0
+        print(f"\n  ZYTE JOBS")
+        print(f"  {'-'*50}")
+        print(f"    Total jobs:     {zyte_stats['total_jobs']}")
+        print(f"    Items scraped:  {zyte_stats['total_items']:,}")
+        print(f"    Responses:      {zyte_stats['total_responses']:,}")
+        print(f"    Errors:         {zyte_stats['total_errors']:,}")
+        print(f"    Runtime:        {format_duration(zyte_stats['total_elapsed_ms'])}")
 
-        for r in results:
-            total_jobs += r["total_jobs"]
-            total_bandwidth += r["total_bandwidth_bytes"]
-            total_cost += r["total_cost"]
-            total_items += r["total_items"]
+        if zyte_stats["by_spider"]:
+            print(f"\n    By spider:")
+            for spider, count in sorted(zyte_stats["by_spider"].items(), key=lambda x: -x[1]):
+                print(f"      {spider:30s} {count}")
 
-            print(f"\n  {r['name']} (Project: {r['project_id']})")
+        print(f"\n  WEBSHARE PROXY")
+        print(f"  {'-'*50}")
+
+        if webshare_stats["plans"]:
+            for pid, pinfo in webshare_stats["plans"].items():
+                print(f"    Plan: {pinfo['proxy_type']}/{pinfo['proxy_subtype']} ({pinfo['proxy_count']} proxies)")
+                print(f"    Monthly cost: ${pinfo['monthly_price']:.2f}")
+                if pinfo["bandwidth_limit"] > 0:
+                    print(f"    Bandwidth limit: {pinfo['bandwidth_limit']:.1f} GB")
+
+        agg = webshare_stats.get("aggregate", {})
+        if agg:
+            bw = agg.get("bandwidth_bytes", 0)
+            print(f"\n    Bandwidth:    {format_size(bw)} ({bw / (1024**3):.4f} GB)")
+            print(f"    Requests:     {agg.get('requests', 0):,}")
+            print(f"      Successful: {agg.get('requests_successful', 0):,}")
+            print(f"      Failed:     {agg.get('requests_failed', 0):,}")
+            print(f"    Proxies used: {agg.get('proxies_used', 0)}")
+
+            if agg.get("error_reasons"):
+                print(f"\n    Proxy errors:")
+                for err in agg["error_reasons"][:5]:
+                    print(f"      {err['reason']}: {err['count']}")
+
+        cost = webshare_stats.get("cost", {})
+        if cost:
+            print(f"\n    Cost ({args.days}d):  ${cost.get('period', 0):.2f}")
+            print(f"    Monthly:    ${cost.get('monthly', 0):.2f}")
+            print(f"    Daily:      ${cost.get('daily', 0):.4f}")
+
+        # Daily breakdown
+        all_dates = set(list(zyte_stats["daily"].keys()) + list(webshare_stats.get("daily", {}).keys()))
+        if all_dates:
+            print(f"\n  DAILY BREAKDOWN")
             print(f"  {'-'*50}")
-            print(f"    Jobs:          {r['total_jobs']}")
-            print(f"    Bandwidth:     {format_size(r['total_bandwidth_bytes'])} ({r['total_bandwidth_gb']} GB)")
-            print(f"    Cost:          ${r['total_cost']:.4f}")
-            print(f"    Items scraped: {r['total_items']:,}")
+            for date in sorted(all_dates, reverse=True)[:7]:
+                z = zyte_stats["daily"].get(date, {})
+                w = webshare_stats.get("daily", {}).get(date, {})
+                bw = w.get("bandwidth_bytes", 0)
+                print(f"    {date}: {z.get('jobs', 0)} jobs, {z.get('items', 0)} items, {format_size(bw)}, {z.get('errors', 0)} errors")
 
-            print(f"\n    By Type:")
-            for jtype, count in r["by_type"].items():
-                if count > 0:
-                    print(f"      {jtype:10s}: {count}")
+        print(f"\n{'='*60}")
 
-            # Daily breakdown
-            if r["daily"]:
-                print(f"\n    Daily Breakdown:")
-                for date in sorted(r["daily"].keys(), reverse=True)[:5]:
-                    d = r["daily"][date]
-                    print(f"      {date}: {d['jobs']} jobs, {format_size(d['bandwidth'])}, ${d['cost']:.4f}")
-
-        print(f"\n  {'='*60}")
-        print(f"  TOTALS")
-        print(f"  {'='*60}")
-        print(f"    Jobs:          {total_jobs}")
-        print(f"    Bandwidth:     {format_size(total_bandwidth)} ({total_bandwidth / (1024 ** 3):.4f} GB)")
-        print(f"    Cost:          ${total_cost:.4f}")
-        print(f"    Items scraped: {total_items:,}")
-
-    # Send to Telegram
+    # ── Send to Telegram ──────────────────────────────────────────────
     if not args.dry_run:
-        telegram_text = format_telegram_report(results, days=args.days)
+        telegram_text = format_telegram_report(zyte_stats, webshare_stats, days=args.days)
         send_telegram(
             telegram_text,
             bot_token=args.telegram_token,
