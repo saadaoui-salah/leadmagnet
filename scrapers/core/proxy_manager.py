@@ -440,6 +440,71 @@ class ProxyManager:
             refresh_interval=refresh_interval,
         )
 
+    @classmethod
+    def from_spider(cls, spider) -> "ProxyManager":
+        """Build manager from spider class variables and settings.
+        
+        Spider class variables override settings:
+            proxy_provider = "webshare"  # "webshare" | "oxylabs" | "none"
+            proxy_session = "default"
+            proxy_rotation = "round-robin"
+            proxy_location = "US"
+            proxy_type = "datacenter"
+        """
+        settings = spider.settings
+
+        # Get config from spider class vars first, then fallback to settings
+        provider = getattr(spider, "proxy_provider", None) or settings.get("PROXY_PROVIDER", "webshare")
+        
+        # If provider is "none", return None (no proxy)
+        if provider == "none":
+            return None
+
+        proxy_type = getattr(spider, "proxy_type", None) or settings.get("PROXY_TYPE", "datacenter")
+        rotation = getattr(spider, "proxy_rotation", None) or settings.get("PROXY_ROTATION", cls.DEFAULT_ROTATION)
+        location = getattr(spider, "proxy_location", None) or settings.get("PROXY_LOCATION", cls.DEFAULT_LOCATION)
+        session = getattr(spider, "proxy_session", "default")
+
+        # Map proxy_type to Webshare mode
+        mode = getattr(spider, "proxy_mode", None) or settings.get("PROXY_MODE", "direct")
+        if proxy_type == "backbone":
+            mode = "backbone"
+
+        # Build session config
+        sessions = {
+            session: {
+                "provider": provider,
+                "strategy": rotation,
+                "country": location,
+                "mode": mode,
+                "proxy_type": proxy_type,
+            }
+        }
+
+        # Add provider-specific config from spider.custom_settings or settings
+        custom_settings = getattr(spider, "custom_settings", {}) or {}
+
+        if provider == "webshare":
+            api_token = custom_settings.get("WEBSHARE_API_TOKEN") or os.getenv("WEBSHARE_API_TOKEN", "")
+            sessions[session]["api_token"] = api_token
+            plan_id = custom_settings.get("PROXY_PLAN_ID") or settings.getint("PROXY_PLAN_ID", None)
+            if plan_id:
+                sessions[session]["plan_id"] = plan_id
+        elif provider == "oxylabs":
+            sessions[session]["host"] = custom_settings.get("OXYLABS_HOST") or settings.get("OXYLABS_HOST", "dc.oxylabs.io")
+            sessions[session]["port"] = custom_settings.get("OXYLABS_PORT") or settings.getint("OXYLABS_PORT", 8000)
+            sessions[session]["username"] = custom_settings.get("OXYLABS_USERNAME") or settings.get("OXYLABS_USERNAME", "")
+            sessions[session]["password"] = custom_settings.get("OXYLABS_PASSWORD") or settings.get("OXYLABS_PASSWORD", "")
+
+        refresh_interval = settings.getint("PROXY_REFRESH_INTERVAL", cls.DEFAULT_REFRESH_INTERVAL)
+
+        return cls(
+            sessions=sessions,
+            rotation=rotation,
+            location=location,
+            refresh_interval=refresh_interval,
+        )
+
     # ── Cache ─────────────────────────────────────────────────────────────
 
     def _save_cache(self):

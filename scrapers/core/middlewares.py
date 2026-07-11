@@ -50,24 +50,29 @@ class CurlCffiDownloaderMiddleware:
         mw._download_delay = crawler.settings.getfloat("DOWNLOAD_DELAY", 0)
 
         if proxy_enabled:
-            try:
-                mw._proxy_mgr = ProxyManager.from_settings(crawler.settings)
-                mw._proxy_mgr.refresh(force=True)
-            except ValueError as e:
-                proxy_enabled = False
-                import logging
-                logging.warning("Proxy manager init failed: %s", e)
+            # Store crawler for later use with spider
+            mw._crawler = crawler
 
         crawler.signals.connect(mw.spider_opened, signal=signals.spider_opened)
         return mw
 
     def spider_opened(self, spider):
-        if self.proxy_enabled and self._proxy_mgr:
-            stats = self._proxy_mgr.stats()
-            total = sum(s["total"] for s in stats.values())
-            spider.logger.info(
-                "CurlCffiDownloaderMiddleware enabled (proxies: %d loaded)", total
-            )
+        # Initialize proxy manager from spider
+        if self.proxy_enabled:
+            try:
+                self._proxy_mgr = ProxyManager.from_spider(spider)
+                if self._proxy_mgr:
+                    self._proxy_mgr.refresh(force=True)
+                    stats = self._proxy_mgr.stats()
+                    total = sum(s["total"] for s in stats.values())
+                    spider.logger.info(
+                        "CurlCffiDownloaderMiddleware enabled (proxies: %d loaded)", total
+                    )
+                else:
+                    spider.logger.info("CurlCffiDownloaderMiddleware enabled (proxy_provider=none)")
+            except Exception as e:
+                spider.logger.warning("Proxy manager init failed: %s", e)
+                self._proxy_mgr = None
         else:
             spider.logger.info("CurlCffiDownloaderMiddleware enabled (no proxies)")
 

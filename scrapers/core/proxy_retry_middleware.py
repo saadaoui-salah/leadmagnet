@@ -39,8 +39,9 @@ class ProxyRetryMiddleware:
 
         if self.proxy_enabled:
             try:
-                self._proxy_mgr = ProxyManager.from_settings(spider.crawler.settings)
-                self._proxy_mgr.refresh(force=True)
+                self._proxy_mgr = ProxyManager.from_spider(spider)
+                if self._proxy_mgr:
+                    self._proxy_mgr.refresh(force=True)
             except Exception as e:
                 logger.warning("Proxy manager init failed: %s", e)
 

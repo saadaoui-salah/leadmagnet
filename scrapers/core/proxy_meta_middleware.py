@@ -39,20 +39,24 @@ class ProxyMetaMiddleware:
 
     @classmethod
     def from_crawler(cls, crawler):
+        from scrapy import signals
+        
         proxy_enabled = crawler.settings.getbool("PROXY_ENABLED", False)
 
         mw = cls(proxy_enabled=proxy_enabled)
-
-        if proxy_enabled:
-            try:
-                mw._proxy_mgr = ProxyManager.from_settings(crawler.settings)
-                mw._proxy_mgr.refresh(force=True)
-            except ValueError as e:
-                proxy_enabled = False
-                import logging
-                logging.warning("ProxyMetaMiddleware init failed: %s", e)
+        crawler.signals.connect(mw.spider_opened, signal=signals.spider_opened)
 
         return mw
+
+    def spider_opened(self, spider):
+        if self.proxy_enabled:
+            try:
+                self._proxy_mgr = ProxyManager.from_spider(spider)
+                if self._proxy_mgr:
+                    self._proxy_mgr.refresh(force=True)
+            except Exception as e:
+                import logging
+                logging.warning("ProxyMetaMiddleware init failed: %s", e)
 
     def _get_proxy_for_request(self, spider):
         """Resolve which proxy to use based on spider class variables or defaults."""
