@@ -38,9 +38,9 @@ jobs:
             pip install -r requirements.txt
 
             echo "Setting up cron jobs..."
-            SEARCH_CRON="0 2 * * * cd ~/leadmagnet/jobs && . venv/bin/activate && python run_zyte.py --listing-types rent sold sale >> /var/log/zyte-cron.log 2>&1"
-            DETAIL_CRON="30 2 * * * cd ~/leadmagnet/jobs && . venv/bin/activate && python run_zyte.py --spider detail >> /var/log/zyte-detail-cron.log 2>&1"
-            REPORT_CRON="0 9 * * * cd ~/leadmagnet/jobs && . venv/bin/activate && python jobs/zyte_report.py >> /var/log/zyte-report.log 2>&1"
+            SEARCH_CRON="0 2 * * * cd ~/leadmagnet/jobs && . venv/bin/activate && python run_zyte.py --listing-types rent sold sale >> ~/log/zyte-cron.log 2>&1"
+            DETAIL_CRON="30 2 * * * cd ~/leadmagnet/jobs && . venv/bin/activate && python run_zyte.py --spider detail >> ~/log/zyte-detail-cron.log 2>&1"
+            REPORT_CRON="0 9 * * * cd ~/leadmagnet/jobs && . venv/bin/activate && python zyte_report.py >> ~/log/zyte-report.log 2>&1"
 
             # Remove old entries, add new
             (crontab -l 2>/dev/null | grep -v "run_zyte.py" | grep -v "zyte_report.py"; echo "$SEARCH_CRON"; echo "$DETAIL_CRON"; echo "$REPORT_CRON") | crontab -

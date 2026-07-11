@@ -1,0 +1,4 @@
+ollama
+edge-tts
+pyttsx3
+requests

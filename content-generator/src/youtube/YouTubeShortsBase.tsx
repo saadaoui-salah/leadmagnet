@@ -9,6 +9,7 @@ import { Scene05KeyDifference } from "./slides/Scene05KeyDifference";
 import { Scene06InvestorTakeaway } from "./slides/Scene06InvestorTakeaway";
 import { Scene07Cta } from "./slides/Scene07Cta";
 import { CaptionsOverlay, textToEvenCaptions } from "./components/CaptionsOverlay";
+import { getNarration } from "./voiceover";
 
 export const SCENE_DURATIONS = {
   scene1Hook: 90,          // 3s
@@ -51,7 +52,7 @@ export type ShortsNarration = {
 export type YouTubeShortsBaseProps = {
   comparison: ShortsComparison;
   narration?: ShortsNarration[];
-  audioMode: "tts" | "silent";
+  audioMode: "tts" | "ai" | "silent";
 };
 
 /**
@@ -89,13 +90,19 @@ export const YouTubeShortsBase = ({
     cum += SCENE_DURATIONS[key];
   });
 
+  // Get AI narration if mode is "ai"
+  const aiNarration = audioMode === "ai" ? getNarration(comparison.mode) : undefined;
+
+  // Use provided narration or AI narration
+  const activeNarration = narration || aiNarration;
+
   // Flatten all captions across scenes into one timeline for the overlay
   const allCaptions: CaptionWord[] = [];
   sceneKeys.forEach((key, idx) => {
     const caps = buildSceneCaptions(
       sceneStartFrames[idx],
       SCENE_DURATIONS[key],
-      narration?.[idx]
+      activeNarration?.[idx]
     );
     allCaptions.push(...caps);
   });
@@ -103,7 +110,7 @@ export const YouTubeShortsBase = ({
   return (
     <AbsoluteFill>
       {/* Background music bed (ducked) */}
-      {audioMode === "tts" && (
+      {(audioMode === "tts" || audioMode === "ai") && (
         <Audio
           src={staticFile("audio/music/shorts-bed.mp3")}
           volume={0.12}
@@ -124,9 +131,9 @@ export const YouTubeShortsBase = ({
             name={`Scene ${index + 1}`}
           >
             <SceneComponent comparison={comparison} />
-            {/* TTS narration per scene */}
-            {audioMode === "tts" && narration?.[index]?.audioFile && (
-              <Audio src={staticFile(`audio/shorts/${narration[index].audioFile}`)} />
+            {/* AI/TTS narration per scene */}
+            {(audioMode === "tts" || audioMode === "ai") && activeNarration?.[index]?.audioFile && (
+              <Audio src={staticFile(`audio/shorts/${activeNarration[index].audioFile}`)} />
             )}
           </Sequence>
         );

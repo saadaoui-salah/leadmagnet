@@ -10,7 +10,7 @@ import os
 import urllib.request
 import sys
 
-BACKEND_API = "http://127.0.0.1:8000"
+BACKEND_API = "http://212.85.17.52:81"
 OLLAMA_URL = "http://localhost:11434/api/generate"
 MODEL = "qwen2.5:32b"
 
