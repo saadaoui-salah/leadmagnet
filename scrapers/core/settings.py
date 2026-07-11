@@ -8,9 +8,9 @@
 #     https://docs.scrapy.org/en/latest/topics/spider-middleware.html
 
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 
-# Load .env file (all credentials come from here)
 load_dotenv()
 
 BOT_NAME = "core"

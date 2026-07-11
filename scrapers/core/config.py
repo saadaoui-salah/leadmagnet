@@ -1,5 +1,5 @@
 """
-Reusable config accessor — reads from spider.custom_settings, then env vars, then default.
+Reusable config accessor — reads from spider.custom_settings, spider.settings, env vars, then default.
 
 Usage:
     from core.config import get_config
@@ -20,12 +20,13 @@ def get_config(
     cast: Optional[Type] = None,
 ) -> Any:
     """
-    Get config value from spider.custom_settings → env vars → default.
+    Get config value from spider.custom_settings → spider.settings → env vars → default.
 
     Priority:
-        1. spider.custom_settings[key]
-        2. os.getenv(key)
-        3. default
+        1. spider.custom_settings[key]  (highest — spider-level overrides)
+        2. spider.settings[key]         (Zyte / Scrapy settings)
+        3. os.getenv(key)               (env vars / .env file)
+        4. default
 
     Args:
         spider: Scrapy spider instance
@@ -43,16 +44,22 @@ def get_config(
     """
     value = None
 
-    # 1. Check spider.custom_settings
+    # 1. Check spider.custom_settings (highest priority)
     custom_settings = getattr(spider, "custom_settings", None)
     if custom_settings and key in custom_settings:
         value = custom_settings[key]
 
-    # 2. Check env vars
+    # 2. Check spider.settings (Zyte / Scrapy settings object)
+    if value is None:
+        spider_settings = getattr(spider, "settings", None)
+        if spider_settings and key in spider_settings:
+            value = spider_settings.get(key)
+
+    # 3. Check env vars
     if value is None:
         value = os.getenv(key)
 
-    # 3. Use default
+    # 4. Use default
     if value is None:
         return default
 

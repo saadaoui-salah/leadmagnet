@@ -372,11 +372,13 @@ class ProxyManager:
 
             kwargs = {}
             if provider_name == "webshare":
-                token = cfg.get("api_token") or os.getenv("WEBSHARE_API_TOKEN", "")
+                token = cfg.get("api_token", "")
+                if not token:
+                    token = os.getenv("WEBSHARE_API_TOKEN", "")
                 if not token:
                     raise ValueError(
                         f"Session '{session_name}' needs WEBSHARE_API_TOKEN. "
-                        "Set it in session config or .env"
+                        "Set it in spider.custom_settings or .env"
                     )
                 kwargs["api_token"] = token
                 # Plan ID can come from session config or proxy_type
@@ -386,12 +388,10 @@ class ProxyManager:
                     plan_id = WebshareProvider.PLAN_IDS.get(proxy_type)
                 kwargs["plan_id"] = plan_id
             elif provider_name == "oxylabs":
-                # Oxylabs credentials come from session config or settings
-                kwargs["host"] = cfg.get("host") or os.getenv("OXYLABS_HOST", "dc.oxylabs.io")
-                port = cfg.get("port") or os.getenv("OXYLABS_PORT", "8000")
-                kwargs["port"] = int(port) if port else 8000
-                kwargs["username"] = cfg.get("username") or os.getenv("OXYLABS_USERNAME", "")
-                kwargs["password"] = cfg.get("password") or os.getenv("OXYLABS_PASSWORD", "")
+                kwargs["host"] = cfg.get("host", "dc.oxylabs.io")
+                kwargs["port"] = int(cfg.get("port", 8000))
+                kwargs["username"] = cfg.get("username", "")
+                kwargs["password"] = cfg.get("password", "")
 
             self._providers[session_name] = get_provider(provider_name, **kwargs)
 
