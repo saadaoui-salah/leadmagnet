@@ -33,6 +33,8 @@ from urllib.parse import urlparse
 
 import requests
 
+from core.config import get_config
+
 
 @dataclass
 class ProxyEntry:
@@ -418,18 +420,17 @@ class ProxyManager:
                 }
             }
 
-            # Add provider-specific config
+            # Add provider-specific config from env vars
             if provider == "webshare":
                 sessions["default"]["api_token"] = os.getenv("WEBSHARE_API_TOKEN", "")
                 plan_id = settings.getint("PROXY_PLAN_ID", None)
                 if plan_id:
                     sessions["default"]["plan_id"] = plan_id
             elif provider == "oxylabs":
-                sessions["default"]["host"] = settings.get("OXYLABS_HOST", "dc.oxylabs.io")
-                port = settings.get("OXYLABS_PORT", "") or os.getenv("OXYLABS_PORT", "8000")
-                sessions["default"]["port"] = int(port) if port else 8000
-                sessions["default"]["username"] = settings.get("OXYLABS_USERNAME", "") or os.getenv("OXYLABS_USERNAME", "")
-                sessions["default"]["password"] = settings.get("OXYLABS_PASSWORD", "") or os.getenv("OXYLABS_PASSWORD", "")
+                sessions[session]["host"] = os.getenv("OXYLABS_HOST", "dc.oxylabs.io")
+                sessions[session]["port"] = int(os.getenv("OXYLABS_PORT", "8000"))
+                sessions[session]["username"] = os.getenv("OXYLABS_USERNAME", "")
+                sessions[session]["password"] = os.getenv("OXYLABS_PASSWORD", "")
 
         rotation = settings.get("PROXY_ROTATION", cls.DEFAULT_ROTATION)
         location = settings.get("PROXY_LOCATION", cls.DEFAULT_LOCATION)
@@ -452,23 +453,25 @@ class ProxyManager:
             proxy_rotation = "round-robin"
             proxy_location = "US"
             proxy_type = "datacenter"
+            
+        Credentials come from custom_settings or env vars:
+            WEBSHARE_API_TOKEN
+            OXYLABS_HOST, OXYLABS_PORT, OXYLABS_USERNAME, OXYLABS_PASSWORD
         """
-        settings = spider.settings
-
-        # Get config from spider class vars first, then fallback to settings
-        provider = getattr(spider, "proxy_provider", None) or settings.get("PROXY_PROVIDER", "webshare")
+        # Get config using get_config (custom_settings → env → default)
+        provider = get_config(spider, "PROXY_PROVIDER", "webshare")
         
         # If provider is "none", return None (no proxy)
         if provider == "none":
             return None
 
-        proxy_type = getattr(spider, "proxy_type", None) or settings.get("PROXY_TYPE", "datacenter")
-        rotation = getattr(spider, "proxy_rotation", None) or settings.get("PROXY_ROTATION", cls.DEFAULT_ROTATION)
-        location = getattr(spider, "proxy_location", None) or settings.get("PROXY_LOCATION", cls.DEFAULT_LOCATION)
+        proxy_type = get_config(spider, "PROXY_TYPE", "datacenter")
+        rotation = get_config(spider, "PROXY_ROTATION", cls.DEFAULT_ROTATION)
+        location = get_config(spider, "PROXY_LOCATION", cls.DEFAULT_LOCATION)
         session = getattr(spider, "proxy_session", "default")
 
         # Map proxy_type to Webshare mode
-        mode = getattr(spider, "proxy_mode", None) or settings.get("PROXY_MODE", "direct")
+        mode = get_config(spider, "PROXY_MODE", "direct")
         if proxy_type == "backbone":
             mode = "backbone"
 
@@ -483,23 +486,19 @@ class ProxyManager:
             }
         }
 
-        # Add provider-specific config from spider.custom_settings or settings
-        custom_settings = getattr(spider, "custom_settings", {}) or {}
-
+        # Add provider-specific config
         if provider == "webshare":
-            api_token = custom_settings.get("WEBSHARE_API_TOKEN") or os.getenv("WEBSHARE_API_TOKEN", "")
-            sessions[session]["api_token"] = api_token
-            plan_id = custom_settings.get("PROXY_PLAN_ID") or settings.getint("PROXY_PLAN_ID", None)
+            sessions[session]["api_token"] = get_config(spider, "WEBSHARE_API_TOKEN", "")
+            plan_id = get_config(spider, "PROXY_PLAN_ID", None, cast=int)
             if plan_id:
                 sessions[session]["plan_id"] = plan_id
         elif provider == "oxylabs":
-            sessions[session]["host"] = custom_settings.get("OXYLABS_HOST") or settings.get("OXYLABS_HOST", "dc.oxylabs.io")
-            port = custom_settings.get("OXYLABS_PORT") or settings.get("OXYLABS_PORT", "") or os.getenv("OXYLABS_PORT", "8000")
-            sessions[session]["port"] = int(port) if port else 8000
-            sessions[session]["username"] = custom_settings.get("OXYLABS_USERNAME") or settings.get("OXYLABS_USERNAME", "") or os.getenv("OXYLABS_USERNAME", "")
-            sessions[session]["password"] = custom_settings.get("OXYLABS_PASSWORD") or settings.get("OXYLABS_PASSWORD", "") or os.getenv("OXYLABS_PASSWORD", "")
+            sessions[session]["host"] = get_config(spider, "OXYLABS_HOST", "dc.oxylabs.io")
+            sessions[session]["port"] = get_config(spider, "OXYLABS_PORT", 8000, cast=int)
+            sessions[session]["username"] = get_config(spider, "OXYLABS_USERNAME", "")
+            sessions[session]["password"] = get_config(spider, "OXYLABS_PASSWORD", "")
 
-        refresh_interval = settings.getint("PROXY_REFRESH_INTERVAL", cls.DEFAULT_REFRESH_INTERVAL)
+        refresh_interval = get_config(spider, "PROXY_REFRESH_INTERVAL", cls.DEFAULT_REFRESH_INTERVAL, cast=int)
 
         return cls(
             sessions=sessions,

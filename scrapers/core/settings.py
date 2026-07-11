@@ -68,15 +68,6 @@ DOWNLOADER_MIDDLEWARES = {
 ZYTE_API_KEY = os.getenv("ZYTE_API_KEY", "")
 ZYTE_PROJECT_ID = os.getenv("ZYTE_PROJECT_ID", "")
 
-# Webshare Proxy
-WEBSHARE_API_TOKEN = os.getenv("WEBSHARE_API_TOKEN", "")
-
-# Oxylabs Proxy
-OXYLABS_HOST = os.getenv("OXYLABS_HOST", "dc.oxylabs.io")
-OXYLABS_PORT = int(os.getenv("OXYLABS_PORT", "8000"))
-OXYLABS_USERNAME = os.getenv("OXYLABS_USERNAME", "")
-OXYLABS_PASSWORD = os.getenv("OXYLABS_PASSWORD", "")
-
 # ── Proxy Configuration ──────────────────────────────────────────────────
 # Auto-enable if provider is set (override with PROXY_ENABLED=False to disable)
 PROXY_PROVIDER = os.getenv("PROXY_PROVIDER", "")  # "webshare" | "oxylabs" | ""
