@@ -355,7 +355,7 @@ def aggregate_webshare_stats(token, days=1):
     }
 
 
-# ── Format Report ─────────────────────────────────────────────────────────
+# ── Format Report (4 messages) ────────────────────────────────────────────
 def format_size(bytes_val):
     if bytes_val < 1024:
         return f"{bytes_val} B"
@@ -376,89 +376,96 @@ def format_duration(ms):
         return f"{ms / 60000:.1f}min"
 
 
-def format_telegram_report(zyte_stats, webshare_stats, days=None):
+def format_scheduled_jobs(zyte_stats, days=None):
+    """Message 1: Jobs scheduled."""
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
-    lines = [f"📊 *Daily Report* — {now}"]
+    lines = [f"📋 *Scheduled Jobs* — {now}"]
 
-    if days:
-        lines[0] += f" _(last {days} days)_"
+    by_state = zyte_stats.get("by_state", {})
+    pending = by_state.get("pending", 0)
+    running = by_state.get("running", 0)
 
-    # ── Zyte Section ──────────────────────────────────────────────────
-    lines.append("\n━━━ *Zyte Jobs* ━━━")
-    lines.append(f"Jobs: {zyte_stats['total_jobs']}")
-    lines.append(f"Items scraped: {zyte_stats['total_items']:,}")
-    lines.append(f"Responses: {zyte_stats['total_responses']:,}")
-    lines.append(f"Errors: {zyte_stats['total_errors']:,}")
-    lines.append(f"Runtime: {format_duration(zyte_stats['total_elapsed_ms'])}")
+    lines.append(f"Pending: {pending}")
+    lines.append(f"Running: {running}")
 
-    # By spider
-    if zyte_stats["by_spider"]:
+    if zyte_stats.get("by_spider"):
         lines.append("\n_By spider:_")
         for spider, count in sorted(zyte_stats["by_spider"].items(), key=lambda x: -x[1]):
             lines.append(f"  {spider}: {count}")
 
-    # By type
-    active_types = {k: v for k, v in zyte_stats["by_type"].items() if v > 0}
-    if active_types:
-        lines.append("\n_By type:_")
-        for jtype, count in sorted(active_types.items(), key=lambda x: -x[1]):
-            lines.append(f"  {jtype}: {count}")
+    return "\n".join(lines)
 
-    # By state
-    if zyte_stats["by_state"]:
-        lines.append("\n_By state:_")
-        for state, count in sorted(zyte_stats["by_state"].items(), key=lambda x: -x[1]):
-            lines.append(f"  {state}: {count}")
 
-    # Error jobs
-    if zyte_stats["error_jobs"]:
+def format_job_summary(zyte_stats, days=None):
+    """Message 2: Jobs finished + items + errors."""
+    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    lines = [f"📊 *Job Summary* — {now}"]
+
+    by_state = zyte_stats.get("by_state", {})
+    finished = by_state.get("finished", 0)
+    failed = by_state.get("failed", 0)
+    total = zyte_stats.get("total_jobs", 0)
+    remaining = total - finished
+
+    lines.append(f"Finished: {finished}")
+    lines.append(f"Failed: {failed}")
+    lines.append(f"Remaining: {remaining}")
+    lines.append(f"Items scraped: {zyte_stats.get('total_items', 0):,}")
+    lines.append(f"Errors: {zyte_stats.get('total_errors', 0):,}")
+    lines.append(f"Runtime: {format_duration(zyte_stats.get('total_elapsed_ms', 0))}")
+
+    if zyte_stats.get("error_jobs"):
         lines.append(f"\n⚠️ *Error jobs:* {len(zyte_stats['error_jobs'])}")
         for ej in zyte_stats["error_jobs"][:5]:
             lines.append(f"  {ej['spider']} — {ej['errors']} errors ({ej['state']})")
 
-    # ── Webshare Section ──────────────────────────────────────────────
-    lines.append("\n━━━ *Webshare Proxy* ━━━")
+    return "\n".join(lines)
 
-    # Plans
-    if webshare_stats["plans"]:
-        for pid, pinfo in webshare_stats["plans"].items():
+
+def format_webshare_cost(webshare_stats, days=None):
+    """Message 3: Webshare proxy cost."""
+    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    lines = [f"💰 *Webshare Proxy Cost* — {now}"]
+
+    plans = webshare_stats.get("plans", {})
+    if plans:
+        for pid, pinfo in plans.items():
             lines.append(f"Plan: {pinfo['proxy_type']}/{pinfo['proxy_subtype']} ({pinfo['proxy_count']} proxies)")
-            lines.append(f"  Monthly: ${pinfo['monthly_price']:.2f}")
+            lines.append(f"Monthly: ${pinfo['monthly_price']:.2f}")
             if pinfo["bandwidth_limit"] > 0:
-                lines.append(f"  Bandwidth limit: {pinfo['bandwidth_limit']:.1f} GB")
+                lines.append(f"Bandwidth limit: {pinfo['bandwidth_limit']:.1f} GB")
 
-    # Aggregate stats
-    agg = webshare_stats["aggregate"]
-    lines.append(f"\nBandwidth: {format_size(agg['bandwidth_bytes'])} ({agg['bandwidth_bytes'] / (1024**3):.4f} GB)")
-    if agg["bandwidth_projected"] > 0:
-        lines.append(f"Projected: {format_size(agg['bandwidth_projected'])} ({agg['bandwidth_projected'] / (1024**3):.4f} GB)")
-    lines.append(f"Requests: {agg['requests']:,}")
-    lines.append(f"  Successful: {agg['requests_successful']:,}")
-    lines.append(f"  Failed: {agg['requests_failed']:,}")
-    lines.append(f"Proxies used: {agg['proxies_used']}")
+    cost = webshare_stats.get("cost", {})
+    if cost:
+        lines.append(f"\nCost ({days or 1}d): ${cost.get('period', 0):.2f}")
+        lines.append(f"Daily: ${cost.get('daily', 0):.4f}")
 
-    if agg["protocols_used"]:
-        lines.append(f"Protocols: {agg['protocols_used']}")
+    agg = webshare_stats.get("aggregate", {})
+    if agg:
+        bw = agg.get("bandwidth_bytes", 0)
+        lines.append(f"\nBandwidth: {format_size(bw)} ({bw / (1024**3):.4f} GB)")
+        lines.append(f"Requests: {agg.get('requests', 0):,}")
+        lines.append(f"  Successful: {agg.get('requests_successful', 0):,}")
+        lines.append(f"  Failed: {agg.get('requests_failed', 0):,}")
 
-    # Cost
-    cost = webshare_stats["cost"]
-    lines.append(f"\nCost: ${cost['period']:.2f} ({days or 1}d)")
-    lines.append(f"  Monthly: ${cost['monthly']:.2f}")
-    lines.append(f"  Daily: ${cost['daily']:.4f}")
+        if agg.get("error_reasons"):
+            lines.append(f"\n⚠️ *Proxy errors:*")
+            for err in agg["error_reasons"][:5]:
+                lines.append(f"  {err['reason']}: {err['count']}")
 
-    # Webshare errors
-    if agg["error_reasons"]:
-        lines.append(f"\n⚠️ *Proxy errors:*")
-        for err in agg["error_reasons"][:5]:
-            lines.append(f"  {err['reason']}: {err['count']}")
+    return "\n".join(lines)
 
-    # ── Daily Breakdown (merged) ──────────────────────────────────────
-    all_dates = set(list(zyte_stats["daily"].keys()) + list(webshare_stats["daily"].keys()))
+
+def format_daily_breakdown(zyte_stats, webshare_stats, days=None):
+    """Message 4: Daily breakdown."""
+    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    lines = [f"📅 *Daily Breakdown* — {now}"]
+
+    all_dates = set(list(zyte_stats.get("daily", {}).keys()) + list(webshare_stats.get("daily", {}).keys()))
     if all_dates:
-        lines.append("\n━━━ *Daily Breakdown* ━━━")
         for date in sorted(all_dates, reverse=True)[:7]:
-            z = zyte_stats["daily"].get(date, {})
-            w = webshare_stats["daily"].get(date, {})
+            z = zyte_stats.get("daily", {}).get(date, {})
+            w = webshare_stats.get("daily", {}).get(date, {})
             bw = w.get("bandwidth_bytes", 0)
             lines.append(
                 f"*{date}*: "
@@ -467,6 +474,8 @@ def format_telegram_report(zyte_stats, webshare_stats, days=None):
                 f"{format_size(bw)}, "
                 f"{z.get('errors', 0) + w.get('requests_failed', 0)} errors"
             )
+    else:
+        lines.append("No data available.")
 
     return "\n".join(lines)
 
@@ -606,14 +615,19 @@ def main():
 
         print(f"\n{'='*60}")
 
-    # ── Send to Telegram ──────────────────────────────────────────────
+    # ── Send to Telegram (4 messages) ────────────────────────────────
     if not args.dry_run:
-        telegram_text = format_telegram_report(zyte_stats, webshare_stats, days=args.days)
-        send_telegram(
-            telegram_text,
-            bot_token=args.telegram_token,
-            chat_id=args.telegram_chat,
-        )
+        msg1 = format_scheduled_jobs(zyte_stats, days=args.days)
+        msg2 = format_job_summary(zyte_stats, days=args.days)
+        msg3 = format_webshare_cost(webshare_stats, days=args.days)
+        msg4 = format_daily_breakdown(zyte_stats, webshare_stats, days=args.days)
+
+        for i, msg in enumerate([msg1, msg2, msg3, msg4], 1):
+            send_telegram(
+                msg,
+                bot_token=args.telegram_token,
+                chat_id=args.telegram_chat,
+            )
 
 
 if __name__ == "__main__":
