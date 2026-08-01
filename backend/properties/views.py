@@ -310,6 +310,7 @@ class ZipCodeViewSet(viewsets.ModelViewSet):
         zipcode = self.request.query_params.get("zipcode")
         city = self.request.query_params.get("city")
         state = self.request.query_params.get("state")
+        region = self.request.query_params.get("region")
 
         if zipcode:
             qs = qs.filter(zipcode=zipcode)
@@ -317,6 +318,8 @@ class ZipCodeViewSet(viewsets.ModelViewSet):
             qs = qs.filter(city__icontains=city)
         if state:
             qs = qs.filter(state__icontains=state)
+        if region == "atlanta":
+            qs = qs.filter(city="Atlanta", state="GA")
         return qs
 
     @action(detail=False, methods=["get"])
